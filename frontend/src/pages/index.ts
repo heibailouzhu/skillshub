@@ -1,0 +1,10 @@
+export { default as HomePage } from './HomePage';
+export { default as LoginPage } from './LoginPage';
+export { default as RegisterPage } from './RegisterPage';
+export { default as SkillListPage } from './SkillListPage';
+export { default as SkillDetailPage } from './SkillDetailPage';
+export { default as SkillCreatePage } from './SkillCreatePage';
+export { default as SkillEditPage } from './SkillEditPage';
+export { default as SkillVersionPage } from './SkillVersionPage';
+export { default as FavoritesPage } from './FavoritesPage';
+export { default as UserProfilePage } from './UserProfilePage';
