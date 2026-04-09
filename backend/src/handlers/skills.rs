@@ -82,6 +82,8 @@ pub struct ListSkillsResponse {
 pub struct SkillListItem {
     /// 技能 ID
     pub id: Uuid,
+    /// 技能 slug
+    pub slug: String,
     /// 技能标题
     pub title: String,
     /// 技能描述
@@ -147,14 +149,25 @@ pub async fn list_skills(
     }
 
     // 构建基础查询
-    let mut base_query = String::from("SELECT s.*, u.username as author_username FROM skills s LEFT JOIN users u ON s.author_id = u.id WHERE s.is_published = true");
-    let mut count_query = String::from("SELECT COUNT(*) FROM skills s WHERE s.is_published = true");
+    let mut base_query = String::from(
+        "SELECT s.id, s.slug, s.title, s.description, s.author_id, u.username as author_username, \
+         s.category, s.version, s.download_count, s.rating_avg, \
+         to_char(s.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at \
+         FROM skills s \
+         LEFT JOIN users u ON s.author_id = u.id \
+         WHERE s.is_published = true AND s.is_deleted = false",
+    );
+    let mut count_query =
+        String::from("SELECT COUNT(*) FROM skills s WHERE s.is_published = true AND s.is_deleted = false");
     let mut conditions = Vec::new();
     let mut query_params: Vec<String> = Vec::new();
 
     // 全文搜索条件（使用 tsvector）
     if let Some(search) = &query.search {
-        conditions.push(format!("s.search_vector @@ to_tsquery('english', $1)"));
+        conditions.push(format!(
+            "s.search_vector @@ plainto_tsquery('english', ${})",
+            query_params.len() + 1
+        ));
         query_params.push(search.clone());
     }
 
@@ -189,15 +202,19 @@ pub async fn list_skills(
 
     // 安全验证排序字段
     let safe_sort_by = match sort_by {
-        "title" | "category" | "download_count" | "rating_avg" | "created_at" => sort_by,
-        "relevance" => { // 搜索相关性排序
+        "title" => "s.title",
+        "category" => "s.category",
+        "download_count" => "s.download_count",
+        "rating_avg" => "s.rating_avg",
+        "created_at" => "s.created_at",
+        "relevance" => {
             if query.search.is_some() {
-                "ts_rank(s.search_vector, to_tsquery('english', $1))"
+                "ts_rank(s.search_vector, plainto_tsquery('english', $1))"
             } else {
-                "created_at"
+                "s.created_at"
             }
         }
-        _ => "created_at",
+        _ => "s.created_at",
     };
 
     let safe_sort_order = match sort_order {
@@ -207,7 +224,7 @@ pub async fn list_skills(
 
     // 添加排序和分页
     base_query = format!(
-        "{} ORDER BY s.{} {} LIMIT {} OFFSET {}",
+        "{} ORDER BY {} {} LIMIT {} OFFSET {}",
         base_query, safe_sort_by, safe_sort_order, page_size, offset
     );
 
@@ -287,7 +304,7 @@ pub async fn get_skill(
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<SkillDetailResponse>> {
     // 查询技能
-    let skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1")
+    let skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
@@ -341,22 +358,27 @@ pub async fn create_skill(
         return Err(AppError::Validation("Skill content cannot be empty".to_string()));
     }
 
+    let slug = generate_unique_slug(&state.pool, &req.title).await?;
+    let tags = req.tags.clone().unwrap_or_default();
+
     // 开始事务
     let mut tx = state.pool.begin().await?;
 
     // 插入技能
     let skill_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO skills (title, description, category, content, author_id, version)
-        VALUES ($1, $2, $3, $4, $5, '1.0.0')
+        INSERT INTO skills (slug, title, description, category, content, author_id, tags, version, is_published)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, '1.0.0', true)
         RETURNING id
         "#,
     )
+    .bind(&slug)
     .bind(&req.title)
     .bind(&req.description)
     .bind(&req.category)
     .bind(&req.content)
     .bind(user_id)
+    .bind(&tags)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -392,7 +414,13 @@ pub async fn create_skill(
         tracing::warn!("Failed to delete popular_tags cache: {}", e);
     }
 
-    tracing::info!(skill_id = %skill_id, title = %req.title, author_id = %user_id, "Skill created successfully");
+    tracing::info!(
+        skill_id = %skill_id,
+        slug = %slug,
+        title = %req.title,
+        author_id = %user_id,
+        "Skill created successfully"
+    );
 
     Ok(Json(skill))
 }
@@ -429,7 +457,7 @@ pub async fn update_skill(
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 检查技能是否存在
-    let existing_skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1")
+    let existing_skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
@@ -505,7 +533,7 @@ pub async fn update_skill(
     query.execute(&state.pool).await?;
 
     // 查询更新后的技能
-    let skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1")
+    let skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -555,7 +583,7 @@ pub async fn delete_skill(
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 检查技能是否存在
-    let existing_skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1")
+    let existing_skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
@@ -742,6 +770,48 @@ pub async fn search_suggestions(
     Ok(Json(suggestions))
 }
 
+fn slugify(input: &str) -> String {
+    let mut slug = String::new();
+    let mut previous_dash = false;
+
+    for ch in input.trim().chars() {
+        let lower = ch.to_ascii_lowercase();
+        if lower.is_ascii_alphanumeric() {
+            slug.push(lower);
+            previous_dash = false;
+        } else if !previous_dash && !slug.is_empty() {
+            slug.push('-');
+            previous_dash = true;
+        }
+    }
+
+    slug.trim_matches('-').to_string()
+}
+
+async fn generate_unique_slug(pool: &sqlx::PgPool, title: &str) -> AppResult<String> {
+    let base = match slugify(title).as_str() {
+        "" => "skill".to_string(),
+        value => value.to_string(),
+    };
+
+    let mut candidate = base.clone();
+    let mut suffix = 2;
+
+    loop {
+        let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM skills WHERE slug = $1)")
+            .bind(&candidate)
+            .fetch_one(pool)
+            .await?;
+
+        if !exists {
+            return Ok(candidate);
+        }
+
+        candidate = format!("{}-{}", base, suffix);
+        suffix += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -809,6 +879,7 @@ mod tests {
     fn test_skill_list_item_serialization() {
         let item = SkillListItem {
             id: Uuid::new_v4(),
+            slug: "test-skill".to_string(),
             title: "Test Skill".to_string(),
             description: Some("Test description".to_string()),
             author_id: Uuid::new_v4(),
@@ -905,5 +976,16 @@ mod tests {
         let tags: Vec<String> = tags_str.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
 
         assert_eq!(tags.len(), 0);
+    }
+
+    #[test]
+    fn test_slugify() {
+        assert_eq!(slugify("Test Skill"), "test-skill");
+        assert_eq!(slugify("  Rust + AI "), "rust-ai");
+    }
+
+    #[test]
+    fn test_slugify_empty_fallback() {
+        assert_eq!(slugify("!!!"), "");
     }
 }

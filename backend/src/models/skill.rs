@@ -11,6 +11,7 @@ mod tests {
     fn test_skill_serialization() {
         let skill = Skill {
             id: uuid::Uuid::new_v4(),
+            slug: "test-skill".to_string(),
             title: "Test Skill".to_string(),
             description: Some("Test description".to_string()),
             content: "Test content".to_string(),
@@ -36,6 +37,7 @@ mod tests {
     fn test_skill_deserialization() {
         let json = r#"{
             "id": "550e8400-e29b-41d4-a716-446655440000",
+            "slug": "test-skill",
             "title": "Test Skill",
             "description": "Test description",
             "content": "Test content",
@@ -54,6 +56,7 @@ mod tests {
 
         let skill: Skill = serde_json::from_str(json).unwrap();
         assert_eq!(skill.title, "Test Skill");
+        assert_eq!(skill.slug, "test-skill");
         assert_eq!(skill.version, "1.0.0");
     }
 
@@ -61,6 +64,7 @@ mod tests {
     fn test_skill_list_item_serialization() {
         let item = SkillListItem {
             id: uuid::Uuid::new_v4(),
+            slug: "test-skill".to_string(),
             title: "Test Skill".to_string(),
             description: Some("Test description".to_string()),
             author_id: uuid::Uuid::new_v4(),
@@ -122,6 +126,7 @@ mod tests {
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, ToSchema)]
 pub struct Skill {
     pub id: uuid::Uuid,
+    pub slug: String,
     pub title: String,
     pub description: Option<String>,
     pub content: String,
@@ -141,6 +146,7 @@ pub struct Skill {
 #[derive(Debug, Clone, FromRow, Serialize, ToSchema)]
 pub struct SkillListItem {
     pub id: uuid::Uuid,
+    pub slug: String,
     pub title: String,
     pub description: Option<String>,
     pub author_id: uuid::Uuid,

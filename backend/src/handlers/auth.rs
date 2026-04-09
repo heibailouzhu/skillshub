@@ -2,13 +2,12 @@ use axum::{
     extract::State,
     response::Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult, ErrorResponse};
-use crate::models::user::{User, RegisterRequest, LoginRequest, LoginResponse};
-use crate::services::auth::AuthService;
+use crate::models::user::{LoginRequest, LoginResponse, RegisterRequest, User};
 use crate::AppState;
 
 /// 注册响应

@@ -313,6 +313,7 @@ mod tests {
 
         let skill = Skill {
             id: Uuid::new_v4(),
+            slug: "test-skill".to_string(),
             title: "Test Skill".to_string(),
             description: Some("Test description".to_string()),
             content: "console.log('hello');".to_string(),

@@ -1,149 +1,121 @@
-# Local SkillShub Deployment
+# SkillShub
 
 English | [中文说明](README-zh.md)
 
-> Deploy your own local SkillShub to privately manage, search, and share AI skills.
+> A self-hosted skill hub for publishing, browsing, rating, versioning, and installing AI skills through a web UI and the `skhub` CLI.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.94-orange.svg)](https://www.rust-lang.org/)
-[![React](https://img.shields.io/badge/react-18-61DAFB.svg)](https://reactjs.org/)
-[![Node.js](https://img.shields.io/badge/node.js-18+-339933.svg)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/react-19-61DAFB.svg)](https://react.dev/)
+[![Node.js](https://img.shields.io/badge/node.js-22+-339933.svg)](https://nodejs.org/)
 
 ## Overview
 
-SkillShub is a self-hosted platform for building your own local AI skill hub.
-It is designed for developers, teams, and organizations that want to deploy SkillShub on their own infrastructure and keep control of data, access, and workflow.
+SkillShub is a local-first, self-hosted platform for teams or individuals who want to run their own private AI skill registry.
+It includes:
 
-This project was completed by OpenClaw.
+- a Rust backend API for auth, skills, versions, comments, favorites, ratings, and registry bundle delivery
+- a React frontend for browsing and managing skills
+- a TypeScript CLI published as `skhub` for installing skills into Codex, Cursor, Claude Code, and OpenClaw workspaces
 
-Repository: `https://github.com/heibailouzhu/skillshub`
+## Current Status
 
-## Why SkillShub
-
-- Self-host your own SkillShub for local network or private server use
-- Manage AI skills in one place instead of scattered local folders
-- Search skills quickly with structured metadata and full-text search
-- Support team collaboration with comments, favorites, and ratings
-- Keep deployment simple with Docker Compose and a clear service split
+- Backend implemented and covered by automated tests
+- Frontend implemented and wired to the backend API
+- CLI implemented with `install` and `config` flows
+- Docker Compose deployment available for the full stack
 
 ## Core Capabilities
 
-- Skill publishing and management
-- Search and filtering
-- User authentication
-- Comments, favorites, and ratings
-- Version tracking for skills
-- Web UI plus backend API for integration
+- Publish and manage skills with version history
+- Browse, search, comment, favorite, and rate skills
+- Download canonical skill bundles through registry APIs
+- Install skills into the current project with:
+  `skhub install <slug> --codex|--cursor|--claude|--openclaw`
+- Configure registry endpoints with:
+  `skhub config`
+  `skhub config repositories <url>`
+  `skhub config rep <url>`
 
-## Roadmap
+## Architecture
 
-Current progress:
+Runtime components:
 
-- Backend development completed
-- Frontend development completed
-- CLI tool development planned as the next major milestone
+- `frontend`: React + Vite UI served by Nginx in Docker
+- `backend`: Rust + Axum API with OpenAPI output
+- `postgres`: primary data store
+- `redis`: cache layer
+- `cli`: local `skhub` command for project-scoped skill installation
 
-Next task focus:
+Registry installation endpoints:
 
-- Build a CLI tool for interacting with your local SkillShub
-- Support login, search, list, detail lookup, and skill installation flows
-- Make local SkillShub easier to use from terminals and automation scripts
-
-## Local-First Positioning
-
-SkillShub is especially suitable if you want to:
-
-- build a local internal skill library
-- deploy your own private SkillShub on a LAN or VPS
-- avoid depending on third-party hosted platforms
-- keep your data, user accounts, and deployment process under your control
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Backend | Rust + Axum + SQLx |
-| Frontend | React 18 + Vite + Tailwind CSS |
-| Database | PostgreSQL |
-| Cache | Redis |
-| Deployment | Docker + Docker Compose + Nginx |
+- `GET /api/registry/skills/:slug`
+- `GET /api/registry/skills/:slug/versions/:version/bundle`
 
 ## Quick Start
 
 ### Prerequisites
 
 - Docker 24+
-- Docker Compose
-- Rust 1.94+ for backend development
-- Node.js 18+ for frontend development
+- Docker Compose v2
 
-### Run with Docker Compose
+### Start the stack
 
 ```bash
 git clone https://github.com/heibailouzhu/skillshub.git
 cd skillshub
-docker-compose up -d
+docker compose up -d --build
 ```
 
-After startup, access the app at:
+Available endpoints after startup:
 
 - Frontend: `http://localhost`
 - Backend health check: `http://localhost:8080/health`
+- OpenAPI JSON: `http://localhost:8080/api/docs/openapi.json`
 
-### Environment Setup
+## Local Development
 
-Backend example config:
+For backend, frontend, and CLI development workflows, use [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-```bash
-cp backend/.env.example backend/.env
-```
-
-Frontend example config:
+Typical commands:
 
 ```bash
-cp frontend/.env.example frontend/.env
-```
+# backend
+cd backend
+cargo test
 
-Then update the copied files with your local database, Redis, and JWT settings before production use.
+# frontend
+cd frontend
+npm install
+npm run dev
+
+# cli
+cd cli
+npm install
+npm test
+npm run build
+```
 
 ## Documentation
 
-- [Chinese README](README-zh.md)
-- [Getting Started](docs/GETTING-STARTED.md)
-- [API Documentation](docs/API.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Contributing Guide](CONTRIBUTING.md)
+- [Container Deployment](docs/DEPLOYMENT.md)
+- [Development Guide](docs/DEVELOPMENT.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Project Structure
 
 ```text
 skillshub/
-├── backend/            # Rust backend API
+├── backend/            # Rust backend API and migrations
 ├── frontend/           # React frontend
-├── docs/               # Project documentation
-├── docker-compose.yml  # Local deployment entry
-├── README.md           # English README
-└── README-zh.md        # Chinese README
+├── cli/                # skhub CLI
+├── docs/               # current project documentation
+├── docker-compose.yml  # full-stack local deployment
+├── README.md
+└── README-zh.md
 ```
-
-## Open Source Notes
-
-- Review `.env` and deployment files before publishing your own fork
-- Never commit real passwords, database URLs, or JWT secrets
-- Prefer `.env.example` files for public configuration examples
-
-## Contributing
-
-Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
-
-## Links
-
-- GitHub Repository: https://github.com/heibailouzhu/skillshub
-- Issues: https://github.com/heibailouzhu/skillshub/issues
-
-Local SkillShub Deployment helps you deploy and operate your own SkillShub with full control.

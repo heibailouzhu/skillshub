@@ -1,371 +1,183 @@
-# SkillShub 部署文档
+# SkillShub 容器化部署
 
-## 📋 目录
+## 概览
 
-- [环境要求](#环境要求)
-- [快速开始](#快速开始)
-- [Docker 部署](#docker-部署)
-- [生产环境部署](#生产环境部署)
-- [监控与日志](#监控与日志)
-- [故障排查](#故障排查)
+本仓库使用根目录 `docker-compose.yml` 启动完整栈：
 
----
+- `postgres`
+- `redis`
+- `backend`
+- `frontend`
 
-## 🔧 环境要求
+默认端口：
 
-### Docker 部署
-- Docker Engine 20.10+
-- Docker Compose 2.0+
-- 至少 2GB 内存
-- 至少 10GB 磁盘空间
+- 前端：`80`
+- 后端：`8080`
+- PostgreSQL：`5432`
+- Redis：`6379`
 
-### 手动部署
-- Rust 1.94.0+
-- Node.js 22+
-- PostgreSQL 16+
-- Redis 7+
+## 前置要求
 
----
+- Docker 24+
+- Docker Compose v2
 
-## 🚀 快速开始
+## 启动步骤
 
-### 1. 克隆仓库
 ```bash
-git clone https://github.com/your-username/skillshub.git
+git clone https://github.com/heibailouzhu/skillshub.git
 cd skillshub
+docker compose up -d --build
 ```
 
-### 2. 配置环境变量
+首次启动后可检查：
+
 ```bash
-# 后端环境变量
-cp backend/.env.example backend/.env
-# 编辑 backend/.env，配置数据库、Redis、JWT 等
-
-# 前端环境变量
-cp frontend/.env.example frontend/.env
-# 编辑 frontend/.env，配置 API 地址等
+docker compose ps
+docker compose logs -f backend
+docker compose logs -f frontend
 ```
 
-### 3. 使用 Docker Compose 启动
+## 访问入口
+
+- 前端首页：`http://localhost`
+- 后端健康检查：`http://localhost:8080/health`
+- OpenAPI JSON：`http://localhost:8080/api/docs/openapi.json`
+
+说明：
+
+- `frontend` 容器暴露在 `80`
+- `backend` 容器直接暴露在 `8080`
+- 容器间连接使用 compose 内部网络
+
+## 默认配置
+
+当前 `docker-compose.yml` 使用以下默认值：
+
+- PostgreSQL 用户：`skillshub`
+- PostgreSQL 密码：`skillshub_password`
+- PostgreSQL 数据库：`skillshub`
+- Redis 地址：`redis://redis:6379`
+- Backend 数据库地址：`postgresql://skillshub:skillshub_password@postgres:5432/skillshub`
+
+生产环境建议至少修改：
+
+- PostgreSQL 密码
+- `JWT_SECRET`
+- `RUST_LOG`
+
+## 常用运维命令
+
+启动：
+
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### 4. 验证服务
+重建：
+
 ```bash
-# 检查服务状态
-docker-compose ps
-
-# 检查健康状态
-curl http://localhost/health
-
-# 访问前端
-open http://localhost
+docker compose up -d --build
 ```
 
----
+停止：
 
-## 🐳 Docker 部署
-
-### 启动所有服务
 ```bash
-docker-compose up -d
+docker compose down
 ```
 
-### 查看日志
+删除数据卷：
+
 ```bash
-# 查看所有服务日志
-docker-compose logs -f
-
-# 查看特定服务日志
-docker-compose logs -f backend
-docker-compose logs -f frontend
-docker-compose logs -f postgres
-docker-compose logs -f redis
+docker compose down -v
 ```
 
-### 停止服务
+查看日志：
+
 ```bash
-docker-compose down
+docker compose logs -f
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f postgres
+docker compose logs -f redis
 ```
 
-### 停止并删除数据卷
+进入容器：
+
 ```bash
-docker-compose down -v
+docker compose exec backend sh
+docker compose exec postgres psql -U skillshub -d skillshub
+docker compose exec redis redis-cli
 ```
 
-### 重新构建并启动
+## 健康检查
+
+当前 compose 已为主要服务配置健康检查：
+
+- `postgres`: `pg_isready`
+- `redis`: `redis-cli ping`
+- `backend`: `curl http://127.0.0.1:8080/health`
+- `frontend`: `wget --spider http://localhost/`
+
+如果 `frontend` 未正常启动，先看：
+
 ```bash
-docker-compose up -d --build
+docker compose logs -f frontend
+docker compose logs -f backend
 ```
 
-### 进入容器
+如果 `backend` 未正常启动，重点检查：
+
+- `DATABASE_URL`
+- `REDIS_URL`
+- `JWT_SECRET`
+- 数据库连接状态
+
+## 升级与回滚
+
+拉取新代码后：
+
 ```bash
-# 进入后端容器
-docker-compose exec backend sh
-
-# 进入数据库容器
-docker-compose exec postgres psql -U skillshub -d skillshub
-
-# 进入 Redis 容器
-docker-compose exec redis redis-cli
+git pull
+docker compose up -d --build
 ```
 
----
+如果需要回滚到旧镜像或旧代码版本，先切回目标代码，再重新执行：
 
-## 🌐 生产环境部署
-
-### 1. 准备服务器
 ```bash
-# 安装 Docker 和 Docker Compose
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
-sudo usermod -aG docker $USER
-
-# 验证安装
-docker --version
-docker-compose --version
+docker compose up -d --build
 ```
 
-### 2. 配置环境变量
-创建 `backend/.env.production`:
+## 故障排查
+
+### 前端能打开，API 不通
+
+优先检查：
+
+- `backend` 容器是否健康
+- 浏览器请求是否打到 `http://localhost:8080`
+- 前端环境变量是否错误覆盖了 `VITE_API_BASE_URL`
+
+### Backend 启动失败
+
+优先检查：
+
+- PostgreSQL 是否健康
+- 数据库账号密码是否与 compose 一致
+- `JWT_SECRET` 是否已设置
+
+### CLI 连接本地部署实例
+
+本地部署后可直接配置 CLI 指向当前服务：
+
 ```bash
-# 数据库配置
-DATABASE_URL=postgresql://skillshub:strong_password_here@postgres:5432/skillshub
-
-# Redis 配置
-REDIS_URL=redis://redis:6379
-
-# JWT 配置
-JWT_SECRET=your-super-secret-jwt-key-at-least-32-characters-long
-
-# 日志配置
-RUST_LOG=info
-
-# 缓存配置
-CACHE_TTL=3600
+cd your-project
+skhub config
+# 或
+skhub config repositories http://127.0.0.1:8080
 ```
 
-### 3. 使用生产配置启动
+简写命令同样可用：
+
 ```bash
-# 使用生产环境变量
-docker-compose --env-file backend/.env.production up -d
+skhub config rep http://127.0.0.1:8080
 ```
-
-### 4. 配置 HTTPS (推荐)
-使用 Nginx 或 Traefik 反向代理:
-
-**Nginx 配置示例:**
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$server_name$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-
-    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
-
-    location / {
-        proxy_pass http://localhost:80;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-### 5. 配置 SSL 证书 (Let's Encrypt)
-```bash
-# 安装 Certbot
-sudo apt-get install certbot python3-certbot-nginx
-
-# 获取证书
-sudo certbot --nginx -d your-domain.com
-
-# 自动续期
-sudo certbot renew --dry-run
-```
-
-### 6. 数据备份
-创建定时任务备份数据库:
-```bash
-# 编辑 crontab
-crontab -e
-
-# 每天凌晨 2 点备份数据库
-0 2 * * * docker-compose exec -T postgres pg_dump -U skillshub skillshub | gzip > /backup/skillshub_$(date +\%Y\%m\%d).sql.gz
-```
-
-### 7. 日志轮转
-配置 Docker 日志轮转 (`/etc/docker/daemon.json`):
-```json
-{
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  }
-}
-```
-
----
-
-## 📊 监控与日志
-
-### 健康检查
-```bash
-# 检查所有服务健康状态
-docker-compose ps
-
-# 手动健康检查
-curl http://localhost/health
-curl http://localhost:8080/health
-```
-
-### 查看资源使用
-```bash
-# 查看容器资源使用
-docker stats
-
-# 查看磁盘使用
-docker system df
-
-# 清理未使用的资源
-docker system prune -a
-```
-
-### 日志聚合
-建议使用以下工具进行日志聚合:
-- **ELK Stack** (Elasticsearch, Logstash, Kibana)
-- **Grafana Loki**
-- **Datadog**
-- **Sentry** (错误追踪)
-
----
-
-## 🔍 故障排查
-
-### 常见问题
-
-#### 1. 服务无法启动
-```bash
-# 查看服务日志
-docker-compose logs backend
-
-# 检查端口占用
-netstat -tuln | grep 8080
-netstat -tuln | grep 5432
-
-# 检查磁盘空间
-df -h
-```
-
-如果 `docker-compose up -d` 卡在 `container skillshub-backend is unhealthy`，且后端日志已经出现 `Server starting on 0.0.0.0:8080`，通常不是应用启动失败，而是健康检查命令失败。
-
-当前后端健康检查依赖容器内的 `curl`:
-```bash
-curl http://localhost:8080/health
-```
-
-如果自定义了 `backend/Dockerfile`，需要确认运行时镜像安装了 `curl`，否则 Compose 会把容器标记为 `unhealthy`，即使服务本身已经成功启动。
-
-#### 2. 数据库连接失败
-```bash
-# 进入数据库容器
-docker-compose exec postgres psql -U skillshub -d skillshub
-
-# 检查连接数
-SELECT count(*) FROM pg_stat_activity;
-
-# 查看数据库大小
-SELECT pg_size_pretty(pg_database_size('skillshub'));
-```
-
-#### 3. Redis 连接失败
-```bash
-# 进入 Redis 容器
-docker-compose exec redis redis-cli
-
-# 检查连接
-ping
-
-# 检查内存使用
-info memory
-```
-
-#### 4. 内存不足
-```bash
-# 查看 Docker 内存限制
-docker stats --no-stream
-
-# 增加内存限制 (在 docker-compose.yml 中)
-services:
-  backend:
-    mem_limit: 1g
-```
-
-#### 5. 磁盘空间不足
-```bash
-# 清理未使用的镜像和容器
-docker system prune -a --volumes
-
-# 清理 PostgreSQL 旧数据
-docker-compose exec postgres vacuumdb -U skillshub -d skillshub --analyze --full
-```
-
-### 获取支持
-- 查看 GitHub Issues: https://github.com/your-username/skillshub/issues
-- 提交 Bug Report
-- 加入 Discord 社区
-
----
-
-## 📚 相关文档
-
-- [运维指南](./OPERATIONS.md)
-- [API 文档](./API.md)
-- [开发指南](./backend/README.md)
-- [前端开发指南](./frontend/README.md)
-
----
-
-## 🔄 更新与升级
-
-### 更新代码
-```bash
-# 拉取最新代码
-git pull origin main
-
-# 重新构建并启动
-docker-compose up -d --build
-
-# 查看更新日志
-docker-compose logs -f
-```
-
-### 数据库迁移
-```bash
-# 进入后端容器
-docker-compose exec backend sh
-
-# 手动运行迁移
-./backend migrate
-```
-
-### 回滚
-```bash
-# 回滚到之前的版本
-git checkout <previous-commit-hash>
-docker-compose up -d --build
-```
-
----
-
-**部署文档最后更新:** 2026-03-08
-**维护者:** 清风

@@ -14,13 +14,12 @@ mod openapi;
 mod routes;
 mod services;
 
-use handlers::health_check;
-use routes::auth_routes;
-use routes::skill_routes;
 use middleware::logging_middleware;
-use services::database;
-use services::auth::AuthService;
 use openapi::openapi_json;
+use routes::skill_routes;
+use routes::{auth_routes, registry_routes};
+use services::auth::AuthService;
+use services::database;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -76,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(handlers::health_check))
         .route("/api/docs/openapi.json", get(openapi_json))
         .nest("/api/auth", auth_routes())
+        .nest("/api/registry", registry_routes())
         .nest("/api/skills", skill_routes(app_state.clone()))
         .layer(axum::middleware::from_fn(logging_middleware));
 

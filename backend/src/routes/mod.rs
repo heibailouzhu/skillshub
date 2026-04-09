@@ -1,19 +1,18 @@
+use crate::AppState;
 use axum::{
-    routing::{get, post, put, delete},
+    routing::{delete, get, post, put},
     Router,
 };
-use crate::AppState;
 
-use crate::handlers::{login, register};
+use crate::handlers::comments::{create_comment, delete_comment, list_comments, update_comment};
+use crate::handlers::favorites::{add_favorite, list_favorites, remove_favorite};
+use crate::handlers::registry::{get_registry_bundle, get_registry_skill};
 use crate::handlers::skills::{
-    list_skills, get_skill, create_skill, update_skill, delete_skill,
-    get_popular_categories, get_popular_tags, search_suggestions
+    create_skill, delete_skill, get_popular_categories, get_popular_tags, get_skill, list_skills,
+    search_suggestions, update_skill,
 };
-use crate::handlers::comments::{
-    list_comments, create_comment, update_comment, delete_comment,
-};
-use crate::handlers::favorites::{list_favorites, add_favorite, remove_favorite};
 use crate::handlers::versions::{create_version, get_version, rollback_version};
+use crate::handlers::{login, register};
 use crate::middleware::auth_middleware;
 
 /// 认证路由
@@ -21,6 +20,16 @@ pub fn auth_routes() -> Router<AppState> {
     Router::new()
         .route("/register", post(register))
         .route("/login", post(login))
+}
+
+/// registry 路由
+pub fn registry_routes() -> Router<AppState> {
+    Router::new()
+        .route("/skills/:slug", get(get_registry_skill))
+        .route(
+            "/skills/:slug/versions/:version/bundle",
+            get(get_registry_bundle),
+        )
 }
 
 /// 公开技能路由（不需要认证）
@@ -89,15 +98,20 @@ pub fn favorite_routes(state: AppState) -> Router<AppState> {
 /// 评分路由
 pub fn rating_routes(state: AppState) -> Router<AppState> {
     // 公开路由（不需要认证）
-    let public_routes = Router::<AppState>::new()
-        .route("/:id/ratings", get(crate::handlers::ratings::get_skill_rating_stats));
+    let public_routes = Router::<AppState>::new().route(
+        "/:id/ratings",
+        get(crate::handlers::ratings::get_skill_rating_stats),
+    );
 
     // 受保护路由（需要认证）
     let protected_routes = Router::<AppState>::new()
         .route("/ratings", get(crate::handlers::ratings::get_user_ratings))
         .route("/:id/rating", post(crate::handlers::ratings::create_rating))
         .route("/ratings/:id", put(crate::handlers::ratings::update_rating))
-        .route("/ratings/:id", delete(crate::handlers::ratings::delete_rating))
+        .route(
+            "/ratings/:id",
+            delete(crate::handlers::ratings::delete_rating),
+        )
         .route_layer(axum::middleware::from_fn_with_state(
             state.auth_service.clone(),
             auth_middleware,
@@ -109,8 +123,7 @@ pub fn rating_routes(state: AppState) -> Router<AppState> {
 /// 版本路由
 pub fn version_routes(state: AppState) -> Router<AppState> {
     // 公开路由（不需要认证）
-    let public_routes = Router::<AppState>::new()
-        .route("/:id/versions/:version", get(get_version));
+    let public_routes = Router::<AppState>::new().route("/:id/versions/:version", get(get_version));
 
     // 受保护路由（需要认证）
     let protected_routes = Router::<AppState>::new()

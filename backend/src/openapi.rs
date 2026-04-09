@@ -1,6 +1,5 @@
-use axum::{Json, response::IntoResponse};
+use axum::{response::IntoResponse, Json};
 use utoipa::OpenApi;
-use serde_json::json;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -21,6 +20,8 @@ use serde_json::json;
         crate::handlers::health_check,
         crate::handlers::auth::register,
         crate::handlers::auth::login,
+        crate::handlers::registry::get_registry_skill,
+        crate::handlers::registry::get_registry_bundle,
         crate::handlers::skills::list_skills,
         crate::handlers::skills::get_skill,
         crate::handlers::skills::create_skill,

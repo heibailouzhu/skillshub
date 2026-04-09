@@ -5,7 +5,9 @@ Cargo.lock
 # Node
 node_modules/
 dist/
+frontend/dist/
 coverage/
+frontend/coverage/
 *.log
 npm-debug.log*
 yarn-debug.log*
