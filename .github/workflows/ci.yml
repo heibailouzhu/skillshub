@@ -102,9 +102,38 @@ jobs:
         SERVER_ADDRESS: 127.0.0.1:8080
         TEST_API_URL: http://localhost:8080
       run: |
+        set -euo pipefail
+
         cargo build --release
-        ./target/release/backend &
-        sleep 10
+
+        ./target/release/backend > backend.log 2>&1 &
+        BACKEND_PID=$!
+
+        cleanup() {
+          echo "==== backend.log ===="
+          cat backend.log || true
+          if kill -0 "$BACKEND_PID" 2>/dev/null; then
+            kill "$BACKEND_PID" || true
+          fi
+        }
+        trap cleanup EXIT
+
+        for i in {1..30}; do
+          if curl -fsS http://127.0.0.1:8080/health > /dev/null; then
+            echo "Backend is ready"
+            break
+          fi
+
+          if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+            echo "Backend process exited before becoming ready"
+            exit 1
+          fi
+
+          echo "Waiting for backend to become ready... ($i/30)"
+          sleep 2
+        done
+
+        curl -fsS http://127.0.0.1:8080/health
         cargo test --test api_tests -- --test-threads=1
 
   # Frontend tests
