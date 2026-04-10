@@ -4,8 +4,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::AuthUser;
@@ -94,7 +94,7 @@ pub async fn create_rating(
 
     // 检查是否已经评分过
     let existing_rating = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM skill_ratings WHERE skill_id = $1 AND user_id = $2"
+        "SELECT id FROM skill_ratings WHERE skill_id = $1 AND user_id = $2",
     )
     .bind(skill_id)
     .bind(user_id)
@@ -111,7 +111,7 @@ pub async fn create_rating(
 
     sqlx::query(
         "INSERT INTO skill_ratings (id, skill_id, user_id, rating, created_at)
-         VALUES ($1, $2, $3, $4, $5)"
+         VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(rating_id)
     .bind(skill_id)
@@ -170,7 +170,7 @@ pub async fn update_rating(
 
     // 验证评分是否存在
     let (_skill_id, rating_user_id, _old_rating) = sqlx::query_as::<_, (Uuid, Uuid, i32)>(
-        "SELECT skill_id, user_id, rating FROM skill_ratings WHERE id = $1"
+        "SELECT skill_id, user_id, rating FROM skill_ratings WHERE id = $1",
     )
     .bind(rating_id)
     .fetch_optional(&state.pool)
@@ -191,7 +191,7 @@ pub async fn update_rating(
 
     // 获取更新后的评分
     let row = sqlx::query(
-        "SELECT id, skill_id, user_id, rating, created_at FROM skill_ratings WHERE id = $1"
+        "SELECT id, skill_id, user_id, rating, created_at FROM skill_ratings WHERE id = $1",
     )
     .bind(rating_id)
     .fetch_one(&state.pool)
@@ -237,13 +237,12 @@ pub async fn delete_rating(
         .map_err(|_| AppError::Internal("无效的用户 ID".to_string()))?;
 
     // 验证评分是否存在
-    let rating_user_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT user_id FROM skill_ratings WHERE id = $1"
-    )
-    .bind(rating_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("评分不存在".to_string()))?;
+    let rating_user_id =
+        sqlx::query_scalar::<_, Uuid>("SELECT user_id FROM skill_ratings WHERE id = $1")
+            .bind(rating_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("评分不存在".to_string()))?;
 
     // 验证权限
     if rating_user_id != current_user_id {
@@ -297,7 +296,7 @@ pub async fn get_skill_rating_stats(
             COUNT(*) as total_ratings,
             COALESCE(AVG(rating), 0) as average_rating
          FROM skill_ratings
-         WHERE skill_id = $1"
+         WHERE skill_id = $1",
     )
     .bind(skill_id)
     .fetch_one(&state.pool)
@@ -379,7 +378,7 @@ pub async fn get_user_ratings(
          JOIN skills s ON sr.skill_id = s.id
          WHERE sr.user_id = $1
          ORDER BY sr.created_at DESC
-         LIMIT $2 OFFSET $3"
+         LIMIT $2 OFFSET $3",
     )
     .bind(user_id)
     .bind(page_size as i64)

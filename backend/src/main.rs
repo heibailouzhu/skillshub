@@ -1,7 +1,4 @@
-use axum::{
-    routing::get,
-    Router,
-};
+use axum::{routing::get, Router};
 use dotenv::dotenv;
 use std::net::SocketAddr;
 
@@ -53,11 +50,12 @@ async fn main() -> anyhow::Result<()> {
 
     // 创建 Redis 缓存服务（如果 Redis 不可用，继续运行但不启用缓存）
     let cache_service = match services::cache::CacheService::new(&config.redis_url).await {
-        Ok(service) => {
-            service
-        }
+        Ok(service) => service,
         Err(e) => {
-            tracing::warn!("Failed to initialize cache service: {}. Cache will be disabled.", e);
+            tracing::warn!(
+                "Failed to initialize cache service: {}. Cache will be disabled.",
+                e
+            );
             // 返回一个禁用的缓存服务
             services::cache::CacheService::disabled()
         }

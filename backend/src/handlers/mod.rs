@@ -22,7 +22,9 @@ use axum::Json;
     tag = "health"
 )]
 pub async fn health_check() -> Json<HealthResponse> {
-    Json(HealthResponse { status: "ok".to_string() })
+    Json(HealthResponse {
+        status: "ok".to_string(),
+    })
 }
 
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

@@ -3,12 +3,12 @@ use axum::{
     response::Json,
 };
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::models::comment::Comment;
 use crate::middleware::AuthUser;
+use crate::models::comment::Comment;
 use crate::AppState;
 
 /// 评论列表查询参数
@@ -74,7 +74,7 @@ pub async fn list_comments(
 
     // 查询总数
     let (total,) = sqlx::query_as::<_, (i64,)>(
-        "SELECT COUNT(*) FROM comments WHERE skill_id = $1 AND is_deleted = false"
+        "SELECT COUNT(*) FROM comments WHERE skill_id = $1 AND is_deleted = false",
     )
     .bind(skill_id)
     .fetch_one(&state.pool)
@@ -125,17 +125,21 @@ pub async fn create_comment(
     Json(req): Json<CreateCommentRequest>,
 ) -> AppResult<Json<Comment>> {
     // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user.user_id.parse::<Uuid>()
+    let user_id: Uuid = auth_user
+        .user_id
+        .parse::<Uuid>()
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 验证输入
     if req.content.trim().is_empty() {
-        return Err(AppError::Validation("Comment content cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Comment content cannot be empty".to_string(),
+        ));
     }
 
     // 验证技能是否存在
     let skill_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM skills WHERE id = $1 AND is_published = true)"
+        "SELECT EXISTS(SELECT 1 FROM skills WHERE id = $1 AND is_published = true)",
     )
     .bind(skill_id)
     .fetch_one(&state.pool)
@@ -208,12 +212,16 @@ pub async fn update_comment(
     Json(req): Json<UpdateCommentRequest>,
 ) -> AppResult<Json<Comment>> {
     // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user.user_id.parse::<Uuid>()
+    let user_id: Uuid = auth_user
+        .user_id
+        .parse::<Uuid>()
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 验证输入
     if req.content.trim().is_empty() {
-        return Err(AppError::Validation("Comment content cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Comment content cannot be empty".to_string(),
+        ));
     }
 
     // 检查评论是否存在
@@ -225,7 +233,9 @@ pub async fn update_comment(
 
     // 检查权限
     if existing_comment.user_id != user_id {
-        return Err(AppError::Forbidden("You are not authorized to update this comment".to_string()));
+        return Err(AppError::Forbidden(
+            "You are not authorized to update this comment".to_string(),
+        ));
     }
 
     // 更新评论
@@ -272,7 +282,9 @@ pub async fn delete_comment(
     Extension(auth_user): Extension<AuthUser>,
 ) -> AppResult<Json<()>> {
     // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user.user_id.parse::<Uuid>()
+    let user_id: Uuid = auth_user
+        .user_id
+        .parse::<Uuid>()
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 检查评论是否存在
@@ -284,7 +296,9 @@ pub async fn delete_comment(
 
     // 检查权限
     if existing_comment.user_id != user_id {
-        return Err(AppError::Forbidden("You are not authorized to delete this comment".to_string()));
+        return Err(AppError::Forbidden(
+            "You are not authorized to delete this comment".to_string(),
+        ));
     }
 
     // 删除评论（软删除）

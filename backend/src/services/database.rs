@@ -55,8 +55,9 @@ pub async fn run_migrations(pool: &DbPool) -> anyhow::Result<()> {
 /// 获取测试数据库 URL（测试辅助函数）
 #[cfg(test)]
 pub fn get_test_database_url() -> String {
-    std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/skillshub_test".to_string())
+    std::env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://postgres:postgres@localhost:5432/skillshub_test".to_string()
+    })
 }
 
 #[cfg(test)]
@@ -85,6 +86,9 @@ mod tests {
     #[test]
     fn test_get_test_database_url() {
         let url = get_test_database_url();
-        assert!(url.contains("postgresql://"), "Database URL should be valid PostgreSQL URL");
+        assert!(
+            url.contains("postgresql://"),
+            "Database URL should be valid PostgreSQL URL"
+        );
     }
 }

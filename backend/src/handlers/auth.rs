@@ -1,7 +1,4 @@
-use axum::{
-    extract::State,
-    response::Json,
-};
+use axum::{extract::State, response::Json};
 use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
@@ -35,7 +32,9 @@ pub async fn register(
 ) -> AppResult<Json<RegisterResponse>> {
     // 验证用户名长度
     if req.username.len() < 3 || req.username.len() > 50 {
-        return Err(AppError::Validation("Username must be between 3 and 50 characters".to_string()));
+        return Err(AppError::Validation(
+            "Username must be between 3 and 50 characters".to_string(),
+        ));
     }
 
     // 验证邮箱格式（简单验证）
@@ -45,7 +44,9 @@ pub async fn register(
 
     // 验证密码长度
     if req.password.len() < 6 {
-        return Err(AppError::Validation("Password must be at least 6 characters".to_string()));
+        return Err(AppError::Validation(
+            "Password must be at least 6 characters".to_string(),
+        ));
     }
 
     // 使用已有的认证服务
@@ -162,11 +163,20 @@ mod tests {
         assert!("a".len() < 3, "Username 'a' is too short");
 
         // 有效长度
-        assert!("abc".len() >= 3 && "abc".len() <= 50, "Username 'abc' is valid");
-        assert!("testuser".len() >= 3 && "testuser".len() <= 50, "Username 'testuser' is valid");
+        assert!(
+            "abc".len() >= 3 && "abc".len() <= 50,
+            "Username 'abc' is valid"
+        );
+        assert!(
+            "testuser".len() >= 3 && "testuser".len() <= 50,
+            "Username 'testuser' is valid"
+        );
 
         // 长用户名应该被拒绝
-        assert!("a".repeat(51).len() > 50, "51-character username is too long");
+        assert!(
+            "a".repeat(51).len() > 50,
+            "51-character username is too long"
+        );
     }
 
     /// 测试邮箱格式验证逻辑
@@ -185,11 +195,7 @@ mod tests {
         }
 
         // 无效的邮箱
-        let invalid_emails = vec![
-            "invalid",
-            "no-at-sign.com",
-            "no@dot",
-        ];
+        let invalid_emails = vec!["invalid", "no-at-sign.com", "no@dot"];
 
         for email in invalid_emails {
             assert!(
@@ -210,7 +216,10 @@ mod tests {
         // 有效长度
         assert!("123456".len() >= 6, "Password '123456' is valid");
         assert!("password".len() >= 6, "Password 'password' is valid");
-        assert!("secure_password_123".len() >= 6, "Password 'secure_password_123' is valid");
+        assert!(
+            "secure_password_123".len() >= 6,
+            "Password 'secure_password_123' is valid"
+        );
     }
 
     /// 测试 RegisterRequest 反序列化

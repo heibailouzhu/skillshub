@@ -24,9 +24,7 @@ pub async fn auth_middleware(
 ) -> Result<Response, StatusCode> {
     // 从请求头中提取 Authorization
     let headers = request.headers();
-    let auth_header = headers
-        .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok());
+    let auth_header = headers.get(AUTHORIZATION).and_then(|h| h.to_str().ok());
 
     // 验证 Token
     let user_id = match auth_header {
@@ -65,9 +63,7 @@ pub async fn optional_auth_middleware(
 ) -> Response {
     // 从请求头中提取 Authorization
     let headers = request.headers();
-    let auth_header = headers
-        .get(AUTHORIZATION)
-        .and_then(|h| h.to_str().ok());
+    let auth_header = headers.get(AUTHORIZATION).and_then(|h| h.to_str().ok());
 
     // 尝试验证 Token
     if let Some(header) = auth_header {

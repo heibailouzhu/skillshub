@@ -28,13 +28,19 @@ impl CacheService {
                         Ok(Self { pool: Some(pool) })
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to connect to Redis: {}. Cache will be disabled.", e);
+                        tracing::warn!(
+                            "Failed to connect to Redis: {}. Cache will be disabled.",
+                            e
+                        );
                         Ok(Self { pool: None })
                     }
                 }
             }
             Err(e) => {
-                tracing::warn!("Failed to create Redis pool: {}. Cache will be disabled.", e);
+                tracing::warn!(
+                    "Failed to create Redis pool: {}. Cache will be disabled.",
+                    e
+                );
                 Ok(Self { pool: None })
             }
         }

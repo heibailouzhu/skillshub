@@ -42,9 +42,7 @@ impl AuthService {
 
     /// 生成 JWT Token
     pub fn generate_token(&self, user_id: &str) -> Result<String> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs() as usize;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as usize;
 
         let exp = now + (self.jwt_expiration_hours * 3600) as usize;
 
@@ -85,7 +83,10 @@ mod tests {
         let password = "test_password_123";
 
         let hashed = service.hash_password(password).unwrap();
-        assert_ne!(password, hashed, "Hashed password should differ from plain text");
+        assert_ne!(
+            password, hashed,
+            "Hashed password should differ from plain text"
+        );
 
         let is_valid = service.verify_password(password, &hashed).unwrap();
         assert!(is_valid, "Password verification should succeed");
@@ -101,7 +102,10 @@ mod tests {
 
         let claims = service.verify_token(&token).unwrap();
         assert_eq!(claims.sub, user_id, "Subject should match user_id");
-        assert!(claims.exp > claims.iat, "Expiration should be after issuance");
+        assert!(
+            claims.exp > claims.iat,
+            "Expiration should be after issuance"
+        );
     }
 
     #[test]

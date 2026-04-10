@@ -1,8 +1,4 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -14,10 +10,7 @@ use uuid::Uuid;
 /// - 路径
 /// - 状态码
 /// - 处理时间
-pub async fn logging_middleware(
-    req: Request,
-    next: Next,
-) -> Response {
+pub async fn logging_middleware(req: Request, next: Next) -> Response {
     let start = Instant::now();
     let method = req.method().clone();
     let uri = req.uri().clone();

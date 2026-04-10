@@ -4,13 +4,13 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::middleware::AuthUser;
 use crate::models::skill::Skill;
 use crate::models::skill_version::SkillVersion;
-use crate::middleware::AuthUser;
 use crate::AppState;
 
 /// 技能列表查询参数
@@ -143,7 +143,11 @@ pub async fn list_skills(
     );
 
     // 尝试从缓存获取
-    if let Ok(Some(cached)) = state.cache_service.get::<ListSkillsResponse>(&cache_key).await {
+    if let Ok(Some(cached)) = state
+        .cache_service
+        .get::<ListSkillsResponse>(&cache_key)
+        .await
+    {
         tracing::debug!("Cache hit for list_skills");
         return Ok(Json(cached));
     }
@@ -157,8 +161,9 @@ pub async fn list_skills(
          LEFT JOIN users u ON s.author_id = u.id \
          WHERE s.is_published = true AND s.is_deleted = false",
     );
-    let mut count_query =
-        String::from("SELECT COUNT(*) FROM skills s WHERE s.is_published = true AND s.is_deleted = false");
+    let mut count_query = String::from(
+        "SELECT COUNT(*) FROM skills s WHERE s.is_published = true AND s.is_deleted = false",
+    );
     let mut conditions = Vec::new();
     let mut query_params: Vec<String> = Vec::new();
 
@@ -276,7 +281,11 @@ pub async fn list_skills(
     // 设置缓存（5分钟）
     if let Err(e) = state
         .cache_service
-        .set(&cache_key, &response, Some(std::time::Duration::from_secs(300)))
+        .set(
+            &cache_key,
+            &response,
+            Some(std::time::Duration::from_secs(300)),
+        )
         .await
     {
         tracing::warn!("Failed to set cache for list_skills: {}", e);
@@ -304,24 +313,22 @@ pub async fn get_skill(
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<SkillDetailResponse>> {
     // 查询技能
-    let skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+    let skill =
+        sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
 
     // 查询技能的所有版本
     let versions = sqlx::query_as::<_, SkillVersion>(
-        "SELECT * FROM skill_versions WHERE skill_id = $1 ORDER BY version DESC"
+        "SELECT * FROM skill_versions WHERE skill_id = $1 ORDER BY version DESC",
     )
     .bind(id)
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(SkillDetailResponse {
-        skill,
-        versions,
-    }))
+    Ok(Json(SkillDetailResponse { skill, versions }))
 }
 
 /// 创建技能（需要认证）
@@ -346,16 +353,22 @@ pub async fn create_skill(
     Json(req): Json<CreateSkillRequest>,
 ) -> AppResult<Json<Skill>> {
     // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user.user_id.parse::<Uuid>()
+    let user_id: Uuid = auth_user
+        .user_id
+        .parse::<Uuid>()
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 验证输入
     if req.title.trim().is_empty() {
-        return Err(AppError::Validation("Skill title cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Skill title cannot be empty".to_string(),
+        ));
     }
 
     if req.content.trim().is_empty() {
-        return Err(AppError::Validation("Skill content cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Skill content cannot be empty".to_string(),
+        ));
     }
 
     let slug = generate_unique_slug(&state.pool, &req.title).await?;
@@ -453,19 +466,24 @@ pub async fn update_skill(
     Json(req): Json<UpdateSkillRequest>,
 ) -> AppResult<Json<Skill>> {
     // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user.user_id.parse::<Uuid>()
+    let user_id: Uuid = auth_user
+        .user_id
+        .parse::<Uuid>()
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 检查技能是否存在
-    let existing_skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+    let existing_skill =
+        sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
 
     // 检查权限
     if existing_skill.author_id != user_id {
-        return Err(AppError::Forbidden("You are not authorized to update this skill".to_string()));
+        return Err(AppError::Forbidden(
+            "You are not authorized to update this skill".to_string(),
+        ));
     }
 
     // 构建动态更新查询
@@ -503,7 +521,11 @@ pub async fn update_skill(
         return Err(AppError::Validation("No fields to update".to_string()));
     }
 
-    let update_query = format!("UPDATE skills SET {} WHERE id = ${}", updates.join(", "), params_count);
+    let update_query = format!(
+        "UPDATE skills SET {} WHERE id = ${}",
+        updates.join(", "),
+        params_count
+    );
 
     // 执行更新
     let mut query = sqlx::query(&update_query);
@@ -533,10 +555,11 @@ pub async fn update_skill(
     query.execute(&state.pool).await?;
 
     // 查询更新后的技能
-    let skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
-        .bind(id)
-        .fetch_one(&state.pool)
-        .await?;
+    let skill =
+        sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
 
     // 使相关缓存失效
     if let Err(e) = state.cache_service.delete_pattern("skills:list:*").await {
@@ -579,19 +602,24 @@ pub async fn delete_skill(
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<()>> {
     // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user.user_id.parse::<Uuid>()
+    let user_id: Uuid = auth_user
+        .user_id
+        .parse::<Uuid>()
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 检查技能是否存在
-    let existing_skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+    let existing_skill =
+        sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
 
     // 检查权限
     if existing_skill.author_id != user_id {
-        return Err(AppError::Forbidden("You are not authorized to delete this skill".to_string()));
+        return Err(AppError::Forbidden(
+            "You are not authorized to delete this skill".to_string(),
+        ));
     }
 
     // 删除技能（软删除）
@@ -643,7 +671,11 @@ pub async fn get_popular_categories(
     let cache_key = "popular_categories";
 
     // 尝试从缓存获取
-    if let Ok(Some(cached)) = state.cache_service.get::<Vec<PopularCategory>>(cache_key).await {
+    if let Ok(Some(cached)) = state
+        .cache_service
+        .get::<Vec<PopularCategory>>(cache_key)
+        .await
+    {
         tracing::debug!("Cache hit for {}", cache_key);
         return Ok(Json(cached));
     }
@@ -654,13 +686,14 @@ pub async fn get_popular_categories(
          WHERE is_published = true AND is_deleted = false
          GROUP BY category
          ORDER BY skill_count DESC
-         LIMIT 20"
+         LIMIT 20",
     )
     .fetch_all(&state.pool)
     .await?;
 
     // 写入缓存（TTL 1 小时）
-    if let Err(e) = state.cache_service
+    if let Err(e) = state
+        .cache_service
         .set(cache_key, &categories, Some(Duration::from_secs(3600)))
         .await
     {
@@ -689,9 +722,7 @@ pub struct PopularTag {
     ),
     tag = "技能管理"
 )]
-pub async fn get_popular_tags(
-    State(state): State<AppState>,
-) -> AppResult<Json<Vec<PopularTag>>> {
+pub async fn get_popular_tags(State(state): State<AppState>) -> AppResult<Json<Vec<PopularTag>>> {
     use std::time::Duration;
 
     let cache_key = "popular_tags";
@@ -708,13 +739,14 @@ pub async fn get_popular_tags(
          WHERE is_published = true AND is_deleted = false AND array_length(tags, 1) > 0
          GROUP BY tag
          ORDER BY skill_count DESC
-         LIMIT 50"
+         LIMIT 50",
     )
     .fetch_all(&state.pool)
     .await?;
 
     // 写入缓存（TTL 1 小时）
-    if let Err(e) = state.cache_service
+    if let Err(e) = state
+        .cache_service
         .set(cache_key, &tags, Some(Duration::from_secs(3600)))
         .await
     {
@@ -761,7 +793,7 @@ pub async fn search_suggestions(
          WHERE is_published = true
          AND is_deleted = false
          AND (title ILIKE $1 OR description ILIKE $1)
-         LIMIT 10"
+         LIMIT 10",
     )
     .bind(format!("{}%", query))
     .fetch_all(&state.pool)
@@ -798,10 +830,11 @@ async fn generate_unique_slug(pool: &sqlx::PgPool, title: &str) -> AppResult<Str
     let mut suffix = 2;
 
     loop {
-        let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM skills WHERE slug = $1)")
-            .bind(&candidate)
-            .fetch_one(pool)
-            .await?;
+        let exists =
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM skills WHERE slug = $1)")
+                .bind(&candidate)
+                .fetch_one(pool)
+                .await?;
 
         if !exists {
             return Ok(candidate);
@@ -855,7 +888,10 @@ mod tests {
         assert_eq!(req.description, Some("A test skill".to_string()));
         assert_eq!(req.category, Some("AI".to_string()));
         assert_eq!(req.content, "console.log('hello');");
-        assert_eq!(req.tags, Some(vec!["JavaScript".to_string(), "Tutorial".to_string()]));
+        assert_eq!(
+            req.tags,
+            Some(vec!["JavaScript".to_string(), "Tutorial".to_string()])
+        );
     }
 
     /// 测试 UpdateSkillRequest 反序列化（可选字段）
@@ -973,7 +1009,11 @@ mod tests {
     #[test]
     fn test_empty_tags_parsing() {
         let tags_str = "";
-        let tags: Vec<String> = tags_str.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
+        let tags: Vec<String> = tags_str
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
 
         assert_eq!(tags.len(), 0);
     }

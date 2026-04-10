@@ -4,13 +4,13 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use uuid::Uuid;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+use crate::middleware::AuthUser;
 use crate::models::favorite::Favorite;
 use crate::models::skill::Skill;
-use crate::middleware::AuthUser;
 use crate::AppState;
 
 /// 收藏列表查询参数
@@ -79,16 +79,16 @@ pub async fn list_favorites(
     let offset = (page - 1) * page_size;
 
     // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user.user_id.parse::<Uuid>()
+    let user_id: Uuid = auth_user
+        .user_id
+        .parse::<Uuid>()
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 查询总数
-    let (total,) = sqlx::query_as::<_, (i64,)>(
-        "SELECT COUNT(*) FROM favorites WHERE user_id = $1"
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let (total,) = sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM favorites WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     // 查询收藏列表（JOIN skills 表获取技能信息）
     let rows = sqlx::query(
@@ -160,12 +160,14 @@ pub async fn add_favorite(
     Extension(auth_user): Extension<AuthUser>,
 ) -> AppResult<Json<Favorite>> {
     // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user.user_id.parse::<Uuid>()
+    let user_id: Uuid = auth_user
+        .user_id
+        .parse::<Uuid>()
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 验证技能是否存在
     let _skill = sqlx::query_as::<_, Skill>(
-        "SELECT * FROM skills WHERE id = $1 AND is_published = true AND is_deleted = false"
+        "SELECT * FROM skills WHERE id = $1 AND is_published = true AND is_deleted = false",
     )
     .bind(skill_id)
     .fetch_optional(&state.pool)
@@ -174,7 +176,7 @@ pub async fn add_favorite(
 
     // 检查是否已经收藏
     let already_favorited = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM favorites WHERE user_id = $1 AND skill_id = $2)"
+        "SELECT EXISTS(SELECT 1 FROM favorites WHERE user_id = $1 AND skill_id = $2)",
     )
     .bind(user_id)
     .bind(skill_id)
@@ -227,7 +229,9 @@ pub async fn remove_favorite(
     Extension(auth_user): Extension<AuthUser>,
 ) -> AppResult<Json<()>> {
     // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user.user_id.parse::<Uuid>()
+    let user_id: Uuid = auth_user
+        .user_id
+        .parse::<Uuid>()
         .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
 
     // 删除收藏

@@ -13,8 +13,7 @@ fn generate_test_username() -> String {
 
 // 辅助函数：获取测试 API URL
 fn get_test_api_url() -> String {
-    std::env::var("TEST_API_URL")
-        .unwrap_or_else(|_| "http://localhost:3000".to_string())
+    std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:3000".to_string())
 }
 
 // 辅助函数：注册测试用户
@@ -33,9 +32,7 @@ async fn register_test_user(client: &Client, base_url: &str) -> Option<serde_jso
         .await;
 
     match response {
-        Ok(resp) if resp.status().is_success() => {
-            resp.json().await.ok()
-        }
+        Ok(resp) if resp.status().is_success() => resp.json().await.ok(),
         _ => None,
     }
 }
@@ -54,7 +51,9 @@ async fn login_test_user(client: &Client, base_url: &str, username: &str) -> Opt
     match response {
         Ok(resp) if resp.status().is_success() => {
             let body: serde_json::Value = resp.json().await.ok()?;
-            body.get("token").and_then(|t| t.as_str()).map(|s| s.to_string())
+            body.get("token")
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
         }
         _ => None,
     }
@@ -78,7 +77,9 @@ async fn create_test_skill(client: &Client, base_url: &str, token: &str) -> Opti
     match response {
         Ok(resp) if resp.status().is_success() => {
             let body: serde_json::Value = resp.json().await.ok()?;
-            body.get("id").and_then(|id| id.as_str()).map(|s| s.to_string())
+            body.get("id")
+                .and_then(|id| id.as_str())
+                .map(|s| s.to_string())
         }
         _ => None,
     }
@@ -91,10 +92,7 @@ async fn test_health_check() {
     let client = Client::new();
     let base_url = get_test_api_url();
 
-    let response = client
-        .get(&format!("{}/health", base_url))
-        .send()
-        .await;
+    let response = client.get(&format!("{}/health", base_url)).send().await;
 
     match response {
         Ok(resp) => {
@@ -420,10 +418,7 @@ async fn test_list_skills() {
     let client = Client::new();
     let base_url = get_test_api_url();
 
-    let response = client
-        .get(&format!("{}/api/skills", base_url))
-        .send()
-        .await;
+    let response = client.get(&format!("{}/api/skills", base_url)).send().await;
 
     match response {
         Ok(resp) if resp.status().is_success() => {
@@ -438,7 +433,10 @@ async fn test_list_skills() {
             eprintln!("List skills failed with status: {}", resp.status());
         }
         Err(e) => {
-            println!("Server not running, skipping list skills test. Error: {}", e);
+            println!(
+                "Server not running, skipping list skills test. Error: {}",
+                e
+            );
         }
     }
 }
@@ -463,7 +461,10 @@ async fn test_search_skills() {
             eprintln!("Search skills failed with status: {}", resp.status());
         }
         Err(e) => {
-            println!("Server not running, skipping search skills test. Error: {}", e);
+            println!(
+                "Server not running, skipping search skills test. Error: {}",
+                e
+            );
         }
     }
 }
@@ -507,12 +508,16 @@ async fn test_create_and_list_comments() {
 
                             match list_response {
                                 Ok(list_resp) if list_resp.status().is_success() => {
-                                    let list_body: serde_json::Value = list_resp.json().await.unwrap();
+                                    let list_body: serde_json::Value =
+                                        list_resp.json().await.unwrap();
                                     assert!(list_body.get("comments").is_some());
                                     println!("List comments test passed");
                                 }
                                 Ok(list_resp) => {
-                                    eprintln!("List comments failed with status: {}", list_resp.status());
+                                    eprintln!(
+                                        "List comments failed with status: {}",
+                                        list_resp.status()
+                                    );
                                 }
                                 Err(e) => {
                                     eprintln!("List comments request failed: {}", e);
@@ -578,7 +583,10 @@ async fn test_add_and_list_favorites() {
                                 println!("List favorites test passed");
                             }
                             Ok(list_resp) => {
-                                eprintln!("List favorites failed with status: {}", list_resp.status());
+                                eprintln!(
+                                    "List favorites failed with status: {}",
+                                    list_resp.status()
+                                );
                             }
                             Err(e) => {
                                 eprintln!("List favorites request failed: {}", e);
@@ -776,7 +784,10 @@ async fn test_rollback_skill_version() {
 
                 // 回滚到初始版本
                 let response = client
-                    .post(&format!("{}/api/skills/{}/versions/1.0.0/rollback", base_url, skill_id))
+                    .post(&format!(
+                        "{}/api/skills/{}/versions/1.0.0/rollback",
+                        base_url, skill_id
+                    ))
                     .header("Authorization", format!("Bearer {}", token))
                     .send()
                     .await;
@@ -788,7 +799,10 @@ async fn test_rollback_skill_version() {
                         println!("Rollback skill version test passed");
                     }
                     Ok(resp) => {
-                        eprintln!("Rollback skill version failed with status: {}", resp.status());
+                        eprintln!(
+                            "Rollback skill version failed with status: {}",
+                            resp.status()
+                        );
                     }
                     Err(e) => {
                         eprintln!("Rollback skill version request failed: {}", e);
@@ -830,7 +844,10 @@ async fn test_protected_routes_require_auth() {
             println!("Protected routes require auth test passed");
         }
         Err(e) => {
-            println!("Server not running, skipping protected routes test. Error: {}", e);
+            println!(
+                "Server not running, skipping protected routes test. Error: {}",
+                e
+            );
         }
     }
 }
@@ -858,7 +875,10 @@ async fn test_invalid_token() {
             println!("Invalid token test passed");
         }
         Err(e) => {
-            println!("Server not running, skipping invalid token test. Error: {}", e);
+            println!(
+                "Server not running, skipping invalid token test. Error: {}",
+                e
+            );
         }
     }
 }
