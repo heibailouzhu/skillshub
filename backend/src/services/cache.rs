@@ -1,6 +1,6 @@
 /// Redis 缓存服务
 use anyhow::Result;
-use deadpool_redis::{Config, Pool, Runtime};
+use deadpool_redis::{Config, Runtime};
 use redis::AsyncCommands;
 use serde::{de::DeserializeOwned, Serialize};
 use std::time::Duration;
@@ -129,8 +129,6 @@ impl CacheService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_cache_service_new() {
         // 测试需要 Redis 实例，这里只测试结构编译

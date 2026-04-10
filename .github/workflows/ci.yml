@@ -88,20 +88,24 @@ jobs:
       env:
         DATABASE_URL: postgresql://skillshub:skillshub_password@localhost:5432/skillshub
         REDIS_URL: redis://localhost:6379
+        JWT_SECRET: ci-test-jwt-secret
+        SERVER_ADDRESS: 127.0.0.1:8080
         TEST_API_URL: http://localhost:8080
-      run: cargo test --lib -- --test-threads=1
+      run: cargo test --bin backend -- --test-threads=1
 
     - name: Run integration tests
       working-directory: ./backend
       env:
         DATABASE_URL: postgresql://skillshub:skillshub_password@localhost:5432/skillshub
         REDIS_URL: redis://localhost:6379
+        JWT_SECRET: ci-test-jwt-secret
+        SERVER_ADDRESS: 127.0.0.1:8080
         TEST_API_URL: http://localhost:8080
       run: |
         cargo build --release
         ./target/release/backend &
         sleep 10
-        cargo test --test '*'
+        cargo test --test api_tests -- --test-threads=1
 
   # Frontend tests
   frontend-test:

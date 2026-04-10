@@ -301,7 +301,6 @@ pub async fn delete_comment(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::comment::Comment;
 
     /// 测试 CreateCommentRequest 反序列化
     #[test]

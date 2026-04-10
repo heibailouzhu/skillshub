@@ -124,11 +124,7 @@ impl IntoResponse for AppError {
             error: error_message.clone(),
             error_code: Some(error_code.to_string()),
             // 在生产环境中，不应该返回详细的内部错误信息
-            details: if matches!(self, AppError::Internal(_) | AppError::Database(_) | AppError::Anyhow(_)) {
-                None
-            } else {
-                None
-            },
+            details: None,
         };
 
         let body_json = Json(body);

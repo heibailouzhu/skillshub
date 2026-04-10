@@ -71,9 +71,7 @@ pub async fn optional_auth_middleware(
 
     // 尝试验证 Token
     if let Some(header) = auth_header {
-        if header.starts_with("Bearer ") {
-            let token = &header[7..];
-
+        if let Some(token) = header.strip_prefix("Bearer ") {
             if let Ok(claims) = auth_service.verify_token(token) {
                 // Token 有效，注入用户信息
                 request.extensions_mut().insert(AuthUser {

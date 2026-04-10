@@ -135,11 +135,11 @@ pub async fn list_skills(
     // 生成缓存键
     let cache_key = format!(
         "skills:list:{}:{}:{}:{}:{}",
-        query.search.as_ref().map(|s| s.as_str()).unwrap_or_default(),
-        query.category.as_ref().map(|s| s.as_str()).unwrap_or_default(),
-        query.tags.as_ref().map(|s| s.as_str()).unwrap_or_default(),
-        query.sort_by.as_ref().map(|s| s.as_str()).unwrap_or_default(),
-        format!("{}:{}", page, page_size)
+        query.search.as_deref().unwrap_or_default(),
+        query.category.as_deref().unwrap_or_default(),
+        query.tags.as_deref().unwrap_or_default(),
+        query.sort_by.as_deref().unwrap_or_default(),
+        format_args!("{}:{}", page, page_size)
     );
 
     // 尝试从缓存获取
@@ -389,7 +389,7 @@ pub async fn create_skill(
         VALUES ($1, '1.0.0', $2, 'Initial version')
         "#,
     )
-    .bind(&skill_id)
+    .bind(skill_id)
     .bind(&req.content)
     .execute(&mut *tx)
     .await?;
@@ -479,12 +479,12 @@ pub async fn update_skill(
         }
     }
 
-    if let Some(description) = &req.description {
+    if req.description.is_some() {
         updates.push(format!("description = ${}", params_count));
         params_count += 1;
     }
 
-    if let Some(category) = &req.category {
+    if req.category.is_some() {
         updates.push(format!("category = ${}", params_count));
         params_count += 1;
     }
@@ -497,7 +497,7 @@ pub async fn update_skill(
     }
 
     // 添加 updated_at
-    updates.push(format!("updated_at = NOW()"));
+    updates.push("updated_at = NOW()".to_string());
 
     if updates.is_empty() {
         return Err(AppError::Validation("No fields to update".to_string()));

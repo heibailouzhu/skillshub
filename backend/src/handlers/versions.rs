@@ -332,7 +332,7 @@ mod tests {
 
         let skill_version = SkillVersion {
             id: Uuid::new_v4(),
-            skill_id: skill.id.clone(),
+            skill_id: skill.id,
             version: "1.0.0".to_string(),
             content: "console.log('hello');".to_string(),
             changelog: None,
@@ -380,7 +380,8 @@ mod tests {
         }
 
         // 空版本号
-        assert!("".is_empty(), "Empty version is invalid");
+        let empty_version = String::new();
+        assert!(empty_version.is_empty(), "Empty version is invalid");
     }
 
     /// 测试版本号比较逻辑

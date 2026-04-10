@@ -169,7 +169,7 @@ pub async fn update_rating(
         .map_err(|_| AppError::Internal("无效的用户 ID".to_string()))?;
 
     // 验证评分是否存在
-    let (skill_id, rating_user_id, _old_rating) = sqlx::query_as::<_, (Uuid, Uuid, i32)>(
+    let (_skill_id, rating_user_id, _old_rating) = sqlx::query_as::<_, (Uuid, Uuid, i32)>(
         "SELECT skill_id, user_id, rating FROM skill_ratings WHERE id = $1"
     )
     .bind(rating_id)
@@ -493,7 +493,7 @@ mod tests {
     /// 测试平均评分计算逻辑
     #[test]
     fn test_average_rating_calculation() {
-        let ratings = vec![5, 4, 5, 3, 5];
+        let ratings = [5, 4, 5, 3, 5];
         let sum: i32 = ratings.iter().sum();
         let avg = sum as f64 / ratings.len() as f64;
 
