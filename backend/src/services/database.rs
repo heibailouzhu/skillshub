@@ -2,6 +2,9 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 
+use crate::config::Config;
+use crate::services::auth::AuthService;
+
 pub type DbPool = Pool<Postgres>;
 
 /// 创建数据库连接池
@@ -49,6 +52,58 @@ pub async fn run_migrations(pool: &DbPool) -> anyhow::Result<()> {
 
     tracing::info!("Database migrations completed successfully");
 
+    Ok(())
+}
+
+pub async fn ensure_admin_user(
+    pool: &DbPool,
+    auth_service: &AuthService,
+    config: &Config,
+) -> anyhow::Result<()> {
+    let (Some(username), Some(email), Some(password)) = (
+        config.admin_username.as_deref(),
+        config.admin_email.as_deref(),
+        config.admin_password.as_deref(),
+    ) else {
+        tracing::info!("Admin bootstrap skipped: ADMIN_USERNAME/ADMIN_EMAIL/ADMIN_PASSWORD not fully configured");
+        return Ok(());
+    };
+
+    if password.len() < 12 {
+        anyhow::bail!("ADMIN_PASSWORD must be at least 12 characters for production use");
+    }
+
+    let existing = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE username = $1 OR email = $2")
+        .bind(username)
+        .bind(email)
+        .fetch_one(pool)
+        .await?;
+
+    if existing > 0 {
+        sqlx::query("UPDATE users SET is_admin = TRUE WHERE username = $1 OR email = $2")
+            .bind(username)
+            .bind(email)
+            .execute(pool)
+            .await?;
+        tracing::info!(username = %username, email = %email, "Existing admin user ensured");
+        return Ok(());
+    }
+
+    let password_hash = auth_service.hash_password(password)?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO users (username, email, password_hash, is_admin)
+        VALUES ($1, $2, $3, TRUE)
+        "#,
+    )
+    .bind(username)
+    .bind(email)
+    .bind(password_hash)
+    .execute(pool)
+    .await?;
+
+    tracing::info!(username = %username, email = %email, "Bootstrap admin user created");
     Ok(())
 }
 

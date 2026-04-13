@@ -73,12 +73,12 @@ pub async fn create_rating(
 ) -> AppResult<Json<RatingResponse>> {
     // 验证评分值（1-5）
     if req.rating < 1 || req.rating > 5 {
-        return Err(AppError::Validation("评分必须在 1-5 之间".to_string()));
+        return Err(AppError::validation("Rating must be between 1 and 5", "INVALID_RATING_VALUE"));
     }
 
     // 转换用户 ID
     let user_id = Uuid::parse_str(&user.user_id)
-        .map_err(|_| AppError::Internal("无效的用户 ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 验证技能是否存在
     let skill_exists = sqlx::query_scalar::<_, bool>(
@@ -89,7 +89,7 @@ pub async fn create_rating(
     .await?;
 
     if !skill_exists {
-        return Err(AppError::NotFound("技能不存在".to_string()));
+        return Err(AppError::not_found("Skill not found", "SKILL_NOT_FOUND"));
     }
 
     // 检查是否已经评分过
@@ -102,7 +102,7 @@ pub async fn create_rating(
     .await?;
 
     if existing_rating.is_some() {
-        return Err(AppError::Conflict("你已经给这个技能评过分了".to_string()));
+        return Err(AppError::conflict("Rating already exists for this skill", "RESOURCE_ALREADY_EXISTS"));
     }
 
     // 创建评分
@@ -161,12 +161,12 @@ pub async fn update_rating(
 ) -> AppResult<Json<RatingResponse>> {
     // 验证评分值（1-5）
     if req.rating < 1 || req.rating > 5 {
-        return Err(AppError::Validation("评分必须在 1-5 之间".to_string()));
+        return Err(AppError::validation("Rating must be between 1 and 5", "INVALID_RATING_VALUE"));
     }
 
     // 转换用户 ID
     let current_user_id = Uuid::parse_str(&user.user_id)
-        .map_err(|_| AppError::Internal("无效的用户 ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 验证评分是否存在
     let (_skill_id, rating_user_id, _old_rating) = sqlx::query_as::<_, (Uuid, Uuid, i32)>(
@@ -175,11 +175,11 @@ pub async fn update_rating(
     .bind(rating_id)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| AppError::NotFound("评分不存在".to_string()))?;
+    .ok_or_else(|| AppError::not_found("Rating not found", "RESOURCE_NOT_FOUND"))?;
 
     // 验证权限
     if rating_user_id != current_user_id {
-        return Err(AppError::Forbidden("无权修改此评分".to_string()));
+        return Err(AppError::forbidden("You are not allowed to update this rating", "FORBIDDEN"));
     }
 
     // 更新评分
@@ -234,7 +234,7 @@ pub async fn delete_rating(
 ) -> AppResult<Json<()>> {
     // 转换用户 ID
     let current_user_id = Uuid::parse_str(&user.user_id)
-        .map_err(|_| AppError::Internal("无效的用户 ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 验证评分是否存在
     let rating_user_id =
@@ -242,11 +242,11 @@ pub async fn delete_rating(
             .bind(rating_id)
             .fetch_optional(&state.pool)
             .await?
-            .ok_or_else(|| AppError::NotFound("评分不存在".to_string()))?;
+            .ok_or_else(|| AppError::not_found("Rating not found", "RESOURCE_NOT_FOUND"))?;
 
     // 验证权限
     if rating_user_id != current_user_id {
-        return Err(AppError::Forbidden("无权删除此评分".to_string()));
+        return Err(AppError::forbidden("You are not allowed to delete this rating", "FORBIDDEN"));
     }
 
     // 删除评分
@@ -287,7 +287,7 @@ pub async fn get_skill_rating_stats(
     .await?;
 
     if !skill_exists {
-        return Err(AppError::NotFound("技能不存在".to_string()));
+        return Err(AppError::not_found("Skill not found", "SKILL_NOT_FOUND"));
     }
 
     // 计算评分统计
@@ -364,7 +364,7 @@ pub async fn get_user_ratings(
 
     // 转换用户 ID
     let user_id = Uuid::parse_str(&user.user_id)
-        .map_err(|_| AppError::Internal("无效的用户 ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     let ratings = sqlx::query(
         "SELECT

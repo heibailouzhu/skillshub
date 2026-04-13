@@ -128,13 +128,11 @@ pub async fn create_comment(
     let user_id: Uuid = auth_user
         .user_id
         .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 验证输入
     if req.content.trim().is_empty() {
-        return Err(AppError::Validation(
-            "Comment content cannot be empty".to_string(),
-        ));
+        return Err(AppError::validation("Comment content cannot be empty", "INVALID_COMMENT_CONTENT"));
     }
 
     // 验证技能是否存在
@@ -146,7 +144,7 @@ pub async fn create_comment(
     .await?;
 
     if !skill_exists {
-        return Err(AppError::NotFound("Skill not found".to_string()));
+        return Err(AppError::not_found("Skill not found", "SKILL_NOT_FOUND"));
     }
 
     // 如果有父评论 ID，验证父评论是否存在
@@ -160,7 +158,7 @@ pub async fn create_comment(
         .await?;
 
         if !parent_exists {
-            return Err(AppError::Validation("Parent comment not found".to_string()));
+            return Err(AppError::validation("Parent comment not found", "RESOURCE_NOT_FOUND"));
         }
     }
 
@@ -215,13 +213,11 @@ pub async fn update_comment(
     let user_id: Uuid = auth_user
         .user_id
         .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 验证输入
     if req.content.trim().is_empty() {
-        return Err(AppError::Validation(
-            "Comment content cannot be empty".to_string(),
-        ));
+        return Err(AppError::validation("Comment content cannot be empty", "INVALID_COMMENT_CONTENT"));
     }
 
     // 检查评论是否存在
@@ -229,13 +225,11 @@ pub async fn update_comment(
         .bind(comment_id)
         .fetch_optional(&state.pool)
         .await?
-        .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
+        .ok_or_else(|| AppError::not_found("Comment not found", "RESOURCE_NOT_FOUND"))?;
 
     // 检查权限
     if existing_comment.user_id != user_id {
-        return Err(AppError::Forbidden(
-            "You are not authorized to update this comment".to_string(),
-        ));
+        return Err(AppError::forbidden("You are not authorized to update this comment", "FORBIDDEN"));
     }
 
     // 更新评论
@@ -285,20 +279,18 @@ pub async fn delete_comment(
     let user_id: Uuid = auth_user
         .user_id
         .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 检查评论是否存在
     let existing_comment = sqlx::query_as::<_, Comment>("SELECT * FROM comments WHERE id = $1")
         .bind(comment_id)
         .fetch_optional(&state.pool)
         .await?
-        .ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
+        .ok_or_else(|| AppError::not_found("Comment not found", "RESOURCE_NOT_FOUND"))?;
 
     // 检查权限
     if existing_comment.user_id != user_id {
-        return Err(AppError::Forbidden(
-            "You are not authorized to delete this comment".to_string(),
-        ));
+        return Err(AppError::forbidden("You are not authorized to delete this comment", "FORBIDDEN"));
     }
 
     // 删除评论（软删除）

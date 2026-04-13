@@ -64,34 +64,28 @@ pub async fn create_version(
     let user_id: Uuid = auth_user
         .user_id
         .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 检查技能是否存在
     let skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
-        .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+        .ok_or_else(|| AppError::not_found("Skill not found", "SKILL_NOT_FOUND"))?;
 
     // 检查权限
     if skill.author_id != user_id {
-        return Err(AppError::Forbidden(
-            "You are not authorized to create versions for this skill".to_string(),
-        ));
+        return Err(AppError::forbidden("You are not authorized to create versions for this skill", "FORBIDDEN"));
     }
 
     // 验证版本号
     if req.version.trim().is_empty() {
-        return Err(AppError::Validation(
-            "Version number cannot be empty".to_string(),
-        ));
+        return Err(AppError::validation("Version number cannot be empty", "INVALID_VERSION"));
     }
 
     // 验证内容
     if req.content.trim().is_empty() {
-        return Err(AppError::Validation(
-            "Version content cannot be empty".to_string(),
-        ));
+        return Err(AppError::validation("Version content cannot be empty", "INVALID_VERSION_CONTENT"));
     }
 
     // 检查版本号是否已存在
@@ -104,10 +98,7 @@ pub async fn create_version(
     .await?;
 
     if existing_version.is_some() {
-        return Err(AppError::Conflict(format!(
-            "Version {} already exists",
-            req.version
-        )));
+        return Err(AppError::conflict(format!("Version {} already exists", req.version), "RESOURCE_ALREADY_EXISTS"));
     }
 
     // 开始事务
@@ -179,7 +170,7 @@ pub async fn get_version(
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
-        .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+        .ok_or_else(|| AppError::not_found("Skill not found", "SKILL_NOT_FOUND"))?;
 
     // 查询版本
     let version_obj = sqlx::query_as::<_, SkillVersion>(
@@ -189,7 +180,7 @@ pub async fn get_version(
     .bind(&version)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| AppError::NotFound("Version not found".to_string()))?;
+    .ok_or_else(|| AppError::not_found("Version not found", "RESOURCE_NOT_FOUND"))?;
 
     Ok(Json(VersionDetailResponse {
         version: version_obj,
@@ -226,20 +217,18 @@ pub async fn rollback_version(
     let user_id: Uuid = auth_user
         .user_id
         .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 检查技能是否存在
     let skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
-        .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+        .ok_or_else(|| AppError::not_found("Skill not found", "SKILL_NOT_FOUND"))?;
 
     // 检查权限
     if skill.author_id != user_id {
-        return Err(AppError::Forbidden(
-            "You are not authorized to rollback this skill".to_string(),
-        ));
+        return Err(AppError::forbidden("You are not authorized to rollback this skill", "FORBIDDEN"));
     }
 
     // 查询目标版本
@@ -250,7 +239,7 @@ pub async fn rollback_version(
     .bind(&version)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| AppError::NotFound("Version not found".to_string()))?;
+    .ok_or_else(|| AppError::not_found("Version not found", "RESOURCE_NOT_FOUND"))?;
 
     // 开始事务
     let mut tx = state.pool.begin().await?;

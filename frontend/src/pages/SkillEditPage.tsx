@@ -1,213 +1,112 @@
-import { useState, useEffect } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getSkill, updateSkill } from '../api/skills';
-import { Navbar, Footer } from '../components';
-import { Button, Input, Card, CardHeader, CardBody, Loading } from '../components';
-import type { UpdateSkillRequest } from '../api/skills';
-import type { Skill } from '../api/skills';
+import { getSkill, updateSkill, type Skill, type UpdateSkillRequest } from '../api/skills';
+import { Button, Card, CardBody, Footer, Input, Navbar } from '../components';
+import { useI18n } from '../i18n';
 
 export default function SkillEditPage() {
-  const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const setSkill = useState<Skill | null>(null)[1];
-  const [formData, setFormData] = useState<UpdateSkillRequest>({
-    title: '',
-    description: '',
-    content: '',
-    category: '',
-    tags: [],
-  });
+  const navigate = useNavigate();
+  const { locale, t } = useI18n();
+  const [skill, setSkill] = useState<Skill | null>(null);
+  const [formData, setFormData] = useState<UpdateSkillRequest>({ title: '', description: '', content: '', category: '', tags: [] });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(true);
+
+  const editText = locale === 'zh-CN'
+    ? {
+        content: '内容',
+        contentPlaceholder: '请输入技能内容...',
+      }
+    : {
+        content: 'Content',
+        contentPlaceholder: 'Enter the skill content...',
+      };
 
   useEffect(() => {
     const fetchSkill = async () => {
+      if (!id) return;
       try {
-        if (id) {
-          const data = await getSkill(id);
-          setSkill(data);
-          setFormData({
-            title: data.title,
-            description: data.description || '',
-            content: data.content,
-            category: data.category || '',
-            tags: data.tags || [],
-          });
-        }
+        const data = await getSkill(id);
+        setSkill(data);
+        setFormData({
+          title: data.title,
+          description: data.description || '',
+          content: data.content,
+          category: data.category || '',
+          tags: data.tags || [],
+        });
       } catch (err: any) {
-        setError(err.response?.data?.error || '获取技能信息失败');
+        setError(err.response?.data?.error || t.messages.fetchSkillFailed);
       } finally {
-        setFetching(false);
+        setLoading(false);
       }
     };
 
     fetchSkill();
-  }, [id]);
+  }, [id, t.messages.fetchSkillFailed]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
-    setError('');
-  };
-
-  const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
-    setError('');
-  };
-
-  const handleTagsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const tagsStr = e.target.value;
-    const tags = tagsStr.split(',').map(tag => tag.trim()).filter(tag => tag);
-    setFormData({
-      ...formData,
-      tags,
-    });
+    setFormData((prev) => ({ ...prev, [name]: value }));
     setError('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-
-    if (!formData.title || !formData.content) {
-      setError('标题和内容不能为空');
-      return;
-    }
-
-    setLoading(true);
-
+    if (!id) return;
+    setSaving(true);
     try {
-      await updateSkill(id!, formData);
+      await updateSkill(id, formData);
       navigate(`/skills/${id}`);
     } catch (err: any) {
-      setError(err.response?.data?.error || '更新技能失败');
+      setError(err.response?.data?.error || t.messages.updateSkillFailed);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  if (fetching) {
-    return <Loading fullScreen text="加载中..." />;
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col">
       <Navbar />
+      <main className="container-wide page-shell flex-1">
+        <section className="glass-panel-strong rounded-[2rem] p-8 xl:p-10">
+          <h1 className="text-4xl font-black">{t.common.edit}</h1>
+        </section>
 
-      <div className="flex-1 max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">编辑技能</h1>
-          <p className="mt-2 text-gray-600">修改你的技能信息</p>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <h2 className="text-xl font-semibold">编辑信息</h2>
-          </CardHeader>
-          <CardBody>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                  {error}
-                </div>
+        <div className="mt-10 grid gap-8 xl:grid-cols-[minmax(0,1.1fr)_320px] xl:items-start">
+          <Card className="xl:min-w-0">
+            <CardBody>
+              {loading ? (
+                <div className="py-8 theme-text-soft">{t.common.loading}</div>
+              ) : !skill ? (
+                <div className="py-8 theme-text-soft">{t.messages.fetchSkillFailed}</div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {error && <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-500">{error}</div>}
+                  <Input label={t.skillCreate.displayName} name="title" value={String(formData.title || '')} onChange={handleChange} fullWidth />
+                  <Input label={t.skillCreate.description} name="description" value={String(formData.description || '')} onChange={handleChange} fullWidth />
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-[var(--text)]">{editText.content}</label>
+                    <textarea name="content" value={String(formData.content || '')} onChange={handleChange} rows={12} placeholder={editText.contentPlaceholder} className="block w-full rounded-2xl border border-[var(--line)] bg-white/50 px-4 py-4" />
+                  </div>
+                  <div className="flex justify-end gap-3">
+                    <Button type="button" variant="secondary" onClick={() => navigate(-1)}>{t.common.cancel}</Button>
+                    <Button type="submit" loading={saving}>{t.common.save}</Button>
+                  </div>
+                </form>
               )}
+            </CardBody>
+          </Card>
 
-              <div>
-                <Input
-                  label="标题 *"
-                  name="title"
-                  value={formData.title}
-                  onChange={handleChange}
-                  placeholder="输入技能标题"
-                  required
-                  fullWidth
-                />
-              </div>
-
-              <div>
-                <Input
-                  label="描述"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  placeholder="简短描述你的技能"
-                  fullWidth
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  分类
-                </label>
-                <select
-                  name="category"
-                  value={formData.category}
-                  onChange={handleSelectChange}
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="">选择分类</option>
-                  <option value="编程">编程</option>
-                  <option value="设计">设计</option>
-                  <option value="数据">数据</option>
-                  <option value="AI">AI</option>
-                  <option value="运维">运维</option>
-                  <option value="其他">其他</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  标签（逗号分隔）
-                </label>
-                <Input
-                  name="tags"
-                  value={formData.tags?.join(', ') || ''}
-                  onChange={handleTagsChange}
-                  placeholder="例如: Python, 机器学习, 数据分析"
-                  fullWidth
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  内容 *
-                </label>
-                <textarea
-                  name="content"
-                  value={formData.content}
-                  onChange={handleChange}
-                  placeholder="详细描述你的技能内容..."
-                  rows={10}
-                  required
-                  className="block w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-3">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => navigate(-1)}
-                >
-                  取消
-                </Button>
-                <Button type="submit" loading={loading}>
-                  保存修改
-                </Button>
-              </div>
-            </form>
-          </CardBody>
-        </Card>
-      </div>
-
+          <aside className="glass-panel rounded-[2rem] p-6 xl:sticky xl:top-28">
+            <div className="text-sm uppercase tracking-[0.22em] theme-text-muted">Editor</div>
+            <h3 className="mt-3 text-2xl font-semibold theme-text">编辑说明</h3>
+            <p className="mt-5 text-sm leading-7 theme-text-soft">在这里更新标题、简介与正文内容。主内容区域保持聚焦，辅助说明放在右侧，减少页面拥挤感。</p>
+          </aside>
+        </div>
+      </main>
       <Footer />
     </div>
   );

@@ -10,6 +10,8 @@ import SkillVersionPage from './pages/SkillVersionPage';
 import FavoritesPage from './pages/FavoritesPage';
 import UserProfilePage from './pages/UserProfilePage';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
+import AdminDashboardPage from './pages/AdminDashboardPage';
 
 const router = createBrowserRouter([
   {
@@ -70,6 +72,14 @@ const router = createBrowserRouter([
       <ProtectedRoute>
         <UserProfilePage />
       </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/admin',
+    element: (
+      <AdminRoute>
+        <AdminDashboardPage />
+      </AdminRoute>
     ),
   },
 ]);

@@ -2,6 +2,7 @@ import apiClient from './client';
 
 export interface Skill {
   id: string;
+  slug: string;
   title: string;
   description?: string;
   content: string;
@@ -13,10 +14,20 @@ export interface Skill {
   download_count: number;
   rating_avg: number;
   rating_count: number;
+  favorite_count?: number;
   is_published: boolean;
   created_at: string;
   updated_at: string;
   versions?: SkillVersion[];
+  package?: SkillPackageSummary | null;
+}
+
+export interface SkillPackageSummary {
+  version: string;
+  file_count: number;
+  total_size: number;
+  bundle_hash: string;
+  download_url: string;
 }
 
 export interface SkillVersion {
@@ -50,7 +61,7 @@ export interface SkillListQuery {
   search?: string;
   category?: string;
   tags?: string;
-  sort_by?: 'created_at' | 'updated_at' | 'rating_avg' | 'download_count' | 'relevance';
+  sort_by?: 'created_at' | 'updated_at' | 'rating_avg' | 'download_count' | 'favorite_count' | 'relevance';
   sort_order?: 'asc' | 'desc';
 }
 
@@ -77,6 +88,13 @@ export interface SkillRatingStats {
   distribution: { [key: number]: number };
 }
 
+export interface SkillDetailResponse {
+  skill: Skill;
+  favorite_count: number;
+  versions: SkillVersion[];
+  package: SkillPackageSummary | null;
+}
+
 export interface SearchSuggestion {
   title: string;
   category?: string;
@@ -90,13 +108,27 @@ export const getSkills = async (params: SkillListQuery): Promise<SkillListRespon
 
 // Get skill details
 export const getSkill = async (id: string): Promise<Skill> => {
-  const response = await apiClient.get<Skill>(`/api/skills/${id}`);
-  return response.data;
+  const response = await apiClient.get<SkillDetailResponse>(`/api/skills/${id}`);
+  return {
+    ...response.data.skill,
+    favorite_count: response.data.favorite_count,
+    versions: response.data.versions,
+    package: response.data.package,
+  };
 };
 
 // Create a new skill
 export const createSkill = async (data: CreateSkillRequest): Promise<Skill> => {
   const response = await apiClient.post<Skill>('/api/skills', data);
+  return response.data;
+};
+
+export const createSkillPackage = async (formData: FormData): Promise<Skill> => {
+  const response = await apiClient.post<Skill>('/api/skills/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
   return response.data;
 };
 

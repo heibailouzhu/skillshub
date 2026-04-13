@@ -1,274 +1,192 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { getSkill, createSkillVersion, rollbackSkillVersion } from '../api/skills';
-import { Navbar, Footer, Button, Modal, Loading, Card } from '../components';
+﻿import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { createSkillVersion, getSkill, rollbackSkillVersion } from '../api/skills';
+import { Badge, Button, Card, CardBody, CardHeader, Footer, Modal, Navbar } from '../components';
 import type { Skill } from '../api/skills';
-import type { SkillVersion } from '../api/skills';
+import { useI18n } from '../i18n';
 
 export default function SkillVersionPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { locale, t } = useI18n();
   const [skill, setSkill] = useState<Skill | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showRollbackModal, setShowRollbackModal] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<SkillVersion | null>(null);
-  const [newVersion, setNewVersion] = useState({
-    version: '',
-    content: '',
-    changelog: '',
-  });
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [version, setVersion] = useState('');
+  const [changelog, setChangelog] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    const fetchSkill = async () => {
-      if (!id) return;
-      setLoading(true);
-      try {
-        const skillRes = await getSkill(id);
-        setSkill(skillRes);
-      } catch (err: any) {
-        setError(err.response?.data?.error || '加载技能失败');
-      } finally {
-        setLoading(false);
+  const text = locale === 'zh-CN'
+    ? {
+        title: '版本管理',
+        subtitle: '为技能内容建立可回滚的历史版本，便于持续迭代与维护。',
+        back: '返回详情',
+        create: '创建新版本',
+        loading: '正在加载版本记录...',
+        notFound: '未找到技能。',
+        currentVersion: '当前版本：',
+        versionCount: '个版本',
+        noVersions: '暂无历史版本。',
+        current: '当前版本',
+        noChangelog: '暂无变更说明。',
+        createdAt: '创建时间：',
+        rollback: '回滚到此版本',
+        versionRequired: '请输入版本号。',
+        confirmCreate: '确认创建',
+        versionLabel: '版本号',
+        versionPlaceholder: '例如：1.1.0',
+        changelogLabel: '变更说明',
+        changelogPlaceholder: '简要说明本次调整内容...',
       }
-    };
+    : {
+        title: 'Version Management',
+        subtitle: 'Create rollback-ready history for your skill content to support safe iteration and maintenance.',
+        back: 'Back to Details',
+        create: 'Create Version',
+        loading: 'Loading version history...',
+        notFound: 'Skill not found.',
+        currentVersion: 'Current version:',
+        versionCount: 'versions',
+        noVersions: 'No version history yet.',
+        current: 'Current',
+        noChangelog: 'No changelog provided.',
+        createdAt: 'Created at:',
+        rollback: 'Rollback to This Version',
+        versionRequired: 'Please enter a version number.',
+        confirmCreate: 'Create',
+        versionLabel: 'Version',
+        versionPlaceholder: 'e.g. 1.1.0',
+        changelogLabel: 'Changelog',
+        changelogPlaceholder: 'Briefly describe what changed in this version...',
+      };
 
+  const fetchSkill = async () => {
+    if (!id) return;
+    try {
+      const data = await getSkill(id);
+      setSkill(data);
+    } catch (err: any) {
+      setError(err.response?.data?.error || t.messages.fetchVersionFailed);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchSkill();
-  }, [id]);
+  }, [id, t.messages.fetchVersionFailed]);
 
-  const handleCreateVersion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!skill || !id) return;
-
+  const handleCreateVersion = async () => {
+    if (!id || !skill || !version.trim()) {
+      setError(text.versionRequired);
+      return;
+    }
     setSubmitting(true);
     try {
-      await createSkillVersion(id, newVersion.version, newVersion.content, newVersion.changelog);
-
-      const skillRes = await getSkill(id);
-      setSkill(skillRes);
-
-      setShowCreateModal(false);
-      setNewVersion({ version: '', content: '', changelog: '' });
-      alert('版本创建成功');
+      await createSkillVersion(id, version.trim(), skill.content, changelog.trim() || undefined);
+      setIsModalOpen(false);
+      setVersion('');
+      setChangelog('');
+      await fetchSkill();
     } catch (err: any) {
-      alert(err.response?.data?.error || '创建版本失败');
+      setError(err.response?.data?.error || t.messages.createVersionFailed);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleRollback = async () => {
-    if (!selectedVersion || !id) return;
-
-    setSubmitting(true);
+  const handleRollback = async (targetVersion: string) => {
+    if (!id) return;
     try {
-      await rollbackSkillVersion(id, selectedVersion.version);
-
-      const skillRes = await getSkill(id);
-      setSkill(skillRes);
-
-      setShowRollbackModal(false);
-      setSelectedVersion(null);
-      alert('回滚成功');
+      await rollbackSkillVersion(id, targetVersion);
+      await fetchSkill();
     } catch (err: any) {
-      alert(err.response?.data?.error || '回滚失败');
-    } finally {
-      setSubmitting(false);
+      setError(err.response?.data?.error || t.messages.rollbackFailed);
     }
   };
-
-  const openRollbackModal = (version: SkillVersion) => {
-    setSelectedVersion(version);
-    setShowRollbackModal(true);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loading />
-      </div>
-    );
-  }
-
-  if (error || !skill) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-red-600">{error || '技能不存在'}</div>
-      </div>
-    );
-  }
-
-  const sortedVersions = skill.versions?.sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  ) || [];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col">
       <Navbar />
+      <main className="container-wide page-shell flex-1">
+        <section className="glass-panel-strong rounded-[2rem] p-8 xl:p-10">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-sm uppercase tracking-[0.24em] theme-text-muted">Versions</div>
+              <h1 className="mt-2 text-4xl font-black">{text.title}</h1>
+              <p className="mt-3 text-sm leading-7 theme-text-soft">{text.subtitle}</p>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="secondary" onClick={() => navigate(`/skills/${id}`)}>{text.back}</Button>
+              <Button onClick={() => setIsModalOpen(true)}>{text.create}</Button>
+            </div>
+          </div>
+        </section>
 
-      <div className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-        <div className="mb-6">
-          <button
-            onClick={() => navigate(`/skills/${id}`)}
-            className="text-indigo-600 hover:text-indigo-800 mb-4 inline-block"
-          >
-            ← 返回技能详情
-          </button>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{skill.title} - 版本管理</h1>
-          <p className="text-gray-600">当前版本: {skill.version}</p>
-        </div>
+        {error && <div className="mt-6 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-500">{error}</div>}
 
-        <div className="mb-6">
-          <Button
-            variant="primary"
-            onClick={() => setShowCreateModal(true)}
-          >
-            创建新版本
-          </Button>
-        </div>
-
-        {sortedVersions.length === 0 ? (
-          <Card>
-            <p className="text-gray-600 text-center py-8">暂无版本记录</p>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {sortedVersions.map((version) => (
-              <Card key={version.id} className="hover:shadow-lg transition-shadow">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">
-                      版本 {version.version}
-                      {version.version === skill.version && (
-                        <span className="ml-2 px-2 py-1 bg-green-100 text-green-800 text-sm rounded-full">
-                          当前
-                        </span>
-                      )}
-                    </h3>
-                    <p className="text-sm text-gray-500 mb-3">
-                      发布时间: {new Date(version.created_at).toLocaleString('zh-CN')}
-                    </p>
-                    {version.changelog && (
-                      <div className="bg-gray-50 p-4 rounded-lg mb-3">
-                        <h4 className="font-medium text-gray-900 mb-2">更新日志:</h4>
-                        <p className="text-gray-700 whitespace-pre-wrap">{version.changelog}</p>
-                      </div>
-                    )}
-                    <details className="mb-3">
-                      <summary className="cursor-pointer text-indigo-600 hover:text-indigo-800 font-medium">
-                        查看版本内容
-                      </summary>
-                      <pre className="mt-2 bg-gray-100 p-4 rounded-md overflow-x-auto whitespace-pre-wrap text-sm">
-                        {version.content}
-                      </pre>
-                    </details>
+        <section className="mt-10">
+          {loading ? (
+            <div className="glass-panel rounded-[2rem] p-8 theme-text-soft">{text.loading}</div>
+          ) : !skill ? (
+            <div className="glass-panel rounded-[2rem] p-8 theme-text-soft">{text.notFound}</div>
+          ) : (
+            <Card className="overflow-hidden">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-semibold">{skill.title}</h2>
+                    <p className="mt-2 text-sm theme-text-soft">{text.currentVersion}{skill.version}</p>
                   </div>
-                  {version.version !== skill.version && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => openRollbackModal(version)}
-                      className="ml-4"
-                    >
-                      回滚到此版本
-                    </Button>
-                  )}
+                  <Badge variant="success">{skill.versions?.length || 0} {text.versionCount}</Badge>
                 </div>
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
+              </CardHeader>
+              <CardBody className="space-y-4">
+                {(skill.versions || []).length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[var(--line)] px-5 py-8 text-center theme-text-soft">{text.noVersions}</div>
+                ) : (
+                  (skill.versions || []).map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-[var(--line)] px-5 py-5">
+                      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <h3 className="text-xl font-semibold">{item.version}</h3>
+                            {item.version === skill.version && <Badge variant="primary">{text.current}</Badge>}
+                          </div>
+                          <p className="mt-2 text-sm theme-text-soft">{item.changelog || text.noChangelog}</p>
+                          <div className="mt-3 text-xs theme-text-muted">{text.createdAt}{new Date(item.created_at).toLocaleString(locale)}</div>
+                        </div>
+                        {item.version !== skill.version && <Button variant="secondary" onClick={() => handleRollback(item.version)}>{text.rollback}</Button>}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardBody>
+            </Card>
+          )}
+        </section>
+      </main>
 
-      {/* 创建版本 Modal */}
       <Modal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="创建新版本"
-      >
-        <form onSubmit={handleCreateVersion} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              版本号
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="例如: 1.0.1, 2.0.0"
-              value={newVersion.version}
-              onChange={(e) => setNewVersion({ ...newVersion, version: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              版本内容
-            </label>
-            <textarea
-              required
-              rows={10}
-              placeholder="输入版本内容..."
-              value={newVersion.content}
-              onChange={(e) => setNewVersion({ ...newVersion, content: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              更新日志（可选）
-            </label>
-            <textarea
-              rows={3}
-              placeholder="描述本次更新的内容..."
-              value={newVersion.changelog}
-              onChange={(e) => setNewVersion({ ...newVersion, changelog: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div className="flex justify-end space-x-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setShowCreateModal(false)}
-            >
-              取消
-            </Button>
-            <Button type="submit" variant="primary" disabled={submitting}>
-              {submitting ? '创建中...' : '创建版本'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* 回滚确认 Modal */}
-      <Modal
-        isOpen={showRollbackModal}
-        onClose={() => setShowRollbackModal(false)}
-        title="确认回滚"
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title={text.create}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>{t.common.cancel}</Button>
+            <Button onClick={handleCreateVersion} loading={submitting}>{text.confirmCreate}</Button>
+          </>
+        }
       >
         <div className="space-y-4">
-          <p className="text-gray-700">
-            确定要将技能回滚到版本 <strong>{selectedVersion?.version}</strong> 吗？
-          </p>
-          <p className="text-sm text-gray-500">
-            此操作将更新技能的当前版本和内容，但不会删除历史版本记录。
-          </p>
-          <div className="flex justify-end space-x-3">
-            <Button
-              variant="secondary"
-              onClick={() => setShowRollbackModal(false)}
-            >
-              取消
-            </Button>
-            <Button
-              variant="danger"
-              onClick={handleRollback}
-              disabled={submitting}
-            >
-              {submitting ? '回滚中...' : '确认回滚'}
-            </Button>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-[var(--text)]">{text.versionLabel}</label>
+            <input value={version} onChange={(e) => setVersion(e.target.value)} placeholder={text.versionPlaceholder} className="block w-full rounded-xl border border-[var(--line)] bg-white/50 px-4 py-3 text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/25" />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-[var(--text)]">{text.changelogLabel}</label>
+            <textarea value={changelog} onChange={(e) => setChangelog(e.target.value)} rows={5} placeholder={text.changelogPlaceholder} className="block w-full rounded-2xl border border-[var(--line)] bg-white/50 px-4 py-3 text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/25" />
           </div>
         </div>
       </Modal>

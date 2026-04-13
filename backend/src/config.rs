@@ -6,6 +6,9 @@ pub struct Config {
     pub jwt_secret: String,
     pub server_address: String,
     pub redis_url: String,
+    pub admin_username: Option<String>,
+    pub admin_email: Option<String>,
+    pub admin_password: Option<String>,
 }
 
 impl Config {
@@ -17,6 +20,9 @@ impl Config {
                 .unwrap_or_else(|_| "0.0.0.0:8080".to_string()),
             redis_url: std::env::var("REDIS_URL")
                 .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
+            admin_username: std::env::var("ADMIN_USERNAME").ok(),
+            admin_email: std::env::var("ADMIN_EMAIL").ok(),
+            admin_password: std::env::var("ADMIN_PASSWORD").ok(),
         }
     }
 }

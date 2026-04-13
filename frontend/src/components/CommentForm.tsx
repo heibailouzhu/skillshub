@@ -1,66 +1,69 @@
-import { useState, type FormEvent } from 'react';
+﻿import { useState } from 'react';
 import { createComment } from '../api/comments';
+import { useI18n } from '../i18n';
 import Button from './Button';
 
 interface CommentFormProps {
   skillId: string;
-  onSuccess: () => void;
+  onSuccess?: () => void;
 }
 
-export function CommentForm({ skillId, onSuccess }: CommentFormProps) {
+export default function CommentForm({ skillId, onSuccess }: CommentFormProps) {
+  const { locale } = useI18n();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  const text = locale === 'zh-CN'
+    ? {
+        empty: '评论内容不能为空。',
+        failed: '评论提交失败，请重试。',
+        label: '发表评论',
+        placeholder: '写下你的使用体验、问题或建议...',
+        submit: '发布评论',
+      }
+    : {
+        empty: 'Comment content cannot be empty.',
+        failed: 'Failed to submit comment. Please try again.',
+        label: 'Post a Comment',
+        placeholder: 'Share your experience, questions, or suggestions...',
+        submit: 'Post Comment',
+      };
 
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!content.trim()) {
-      setError('评论内容不能为空');
+      setError(text.empty);
       return;
     }
 
     setLoading(true);
     setError('');
-
     try {
-      await createComment(skillId, { content });
+      await createComment(skillId, { content: content.trim() });
       setContent('');
-      setError('');
-      onSuccess();
+      onSuccess?.();
     } catch (err: any) {
-      setError(err.response?.data?.message || '评论失败，请重试');
+      setError(err.response?.data?.message || text.failed);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="mb-6">
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          发表评论
-        </label>
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          rows={4}
-          placeholder="写下你的评论..."
-          className={`
-            block w-full px-3 py-2 rounded-lg border-gray-300 shadow-sm
-            focus:border-blue-500 focus:ring-blue-500
-            ${error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}
-          `}
-        />
-        {error && (
-          <p className="mt-1 text-sm text-red-600">
-            {error}
-          </p>
-        )}
+    <form className="mb-6" onSubmit={handleSubmit}>
+      <label className="mb-2 block text-sm font-medium text-slate-200">{text.label}</label>
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        rows={4}
+        className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-100 outline-none transition focus:border-emerald-400/40"
+        placeholder={text.placeholder}
+      />
+      {error && <div className="mt-3 text-sm text-rose-300">{error}</div>}
+      <div className="mt-4 flex justify-end">
+        <Button type="submit" loading={loading}>{text.submit}</Button>
       </div>
-      <Button type="submit" variant="primary" loading={loading}>
-        发表评论
-      </Button>
     </form>
   );
 }

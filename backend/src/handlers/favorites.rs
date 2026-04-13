@@ -2,6 +2,7 @@ use axum::{
     extract::{Extension, Path, Query, State},
     response::Json,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use utoipa::ToSchema;
@@ -22,35 +23,24 @@ pub struct ListFavoritesQuery {
     pub page_size: Option<u32>,
 }
 
-/// 收藏列表响应
+/// 收藏列表项
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FavoriteItem {
-    /// 收藏 ID
     pub id: Uuid,
-    /// 技能 ID
     pub skill_id: Uuid,
-    /// 技能标题
     pub skill_title: String,
-    /// 技能描述
     pub skill_description: Option<String>,
-    /// 技能分类
     pub skill_category: Option<String>,
-    /// 技能作者 ID
     pub skill_author_id: Uuid,
-    /// 收藏时间
-    pub created_at: String,
+    pub created_at: DateTime<Utc>,
 }
 
 /// 收藏列表响应
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ListFavoritesResponse {
-    /// 收藏列表
     pub favorites: Vec<FavoriteItem>,
-    /// 总数
     pub total: i64,
-    /// 当前页
     pub page: u32,
-    /// 每页数量
     pub page_size: u32,
 }
 
@@ -82,7 +72,7 @@ pub async fn list_favorites(
     let user_id: Uuid = auth_user
         .user_id
         .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 查询总数
     let (total,) = sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM favorites WHERE user_id = $1")
@@ -163,7 +153,7 @@ pub async fn add_favorite(
     let user_id: Uuid = auth_user
         .user_id
         .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 验证技能是否存在
     let _skill = sqlx::query_as::<_, Skill>(
@@ -172,7 +162,7 @@ pub async fn add_favorite(
     .bind(skill_id)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+    .ok_or_else(|| AppError::not_found("Skill not found", "SKILL_NOT_FOUND"))?;
 
     // 检查是否已经收藏
     let already_favorited = sqlx::query_scalar::<_, bool>(
@@ -184,7 +174,7 @@ pub async fn add_favorite(
     .await?;
 
     if already_favorited {
-        return Err(AppError::Conflict("Skill already favorited".to_string()));
+        return Err(AppError::conflict("Skill already favorited", "RESOURCE_ALREADY_EXISTS"));
     }
 
     // 添加收藏
@@ -232,7 +222,7 @@ pub async fn remove_favorite(
     let user_id: Uuid = auth_user
         .user_id
         .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))?;
 
     // 删除收藏
     let result = sqlx::query("DELETE FROM favorites WHERE user_id = $1 AND skill_id = $2")
@@ -243,7 +233,7 @@ pub async fn remove_favorite(
 
     // 检查是否删除了记录
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Favorite not found".to_string()));
+        return Err(AppError::not_found("Favorite not found", "RESOURCE_NOT_FOUND"));
     }
 
     tracing::info!(skill_id = %skill_id, user_id = %user_id, "Favorite removed successfully");
@@ -293,7 +283,7 @@ mod tests {
             skill_description: Some("Test description".to_string()),
             skill_category: Some("AI".to_string()),
             skill_author_id: Uuid::new_v4(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
+            created_at: Utc::now(),
         };
 
         let json = serde_json::to_string(&item).unwrap();
@@ -311,7 +301,7 @@ mod tests {
             skill_description: None,
             skill_category: None,
             skill_author_id: Uuid::new_v4(),
-            created_at: "2024-01-01T00:00:00Z".to_string(),
+            created_at: Utc::now(),
         };
 
         let json = serde_json::to_string(&item).unwrap();

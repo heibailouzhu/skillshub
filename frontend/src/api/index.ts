@@ -39,3 +39,6 @@ export * from './favorites';
 
 // Ratings API
 export * from './ratings';
+
+// Admin API
+export * from './admin';

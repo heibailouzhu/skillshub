@@ -14,6 +14,7 @@ mod tests {
             email: "test@example.com".to_string(),
             password_hash: "hashed_password".to_string(),
             username: "testuser".to_string(),
+            is_admin: false,
             avatar_url: Some("https://example.com/avatar.jpg".to_string()),
             bio: Some("Test bio".to_string()),
             created_at: Utc::now(),
@@ -33,6 +34,7 @@ mod tests {
             "email": "test@example.com",
             "password_hash": "hashed_password",
             "username": "testuser",
+            "is_admin": false,
             "avatar_url": "https://example.com/avatar.jpg",
             "bio": "Test bio",
             "created_at": "2024-01-01T00:00:00Z",
@@ -51,6 +53,7 @@ mod tests {
             id: uuid::Uuid::new_v4(),
             email: "test@example.com".to_string(),
             username: "testuser".to_string(),
+            is_admin: false,
             avatar_url: Some("https://example.com/avatar.jpg".to_string()),
             bio: Some("Test bio".to_string()),
             created_at: Utc::now(),
@@ -93,6 +96,7 @@ mod tests {
             token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9".to_string(),
             user_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
             username: "testuser".to_string(),
+            is_admin: false,
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -107,6 +111,7 @@ pub struct User {
     pub email: String,
     pub password_hash: String,
     pub username: String,
+    pub is_admin: bool,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -120,6 +125,7 @@ pub struct UserPublic {
     pub id: uuid::Uuid,
     pub email: String,
     pub username: String,
+    pub is_admin: bool,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -143,4 +149,5 @@ pub struct LoginResponse {
     pub token: String,
     pub user_id: String,
     pub username: String,
+    pub is_admin: bool,
 }

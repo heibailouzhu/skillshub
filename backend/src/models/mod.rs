@@ -6,5 +6,6 @@ pub mod favorite;
 pub mod moderation_log;
 pub mod rating;
 pub mod skill;
+pub mod skill_package;
 pub mod skill_version;
 pub mod user;

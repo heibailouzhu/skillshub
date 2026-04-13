@@ -73,6 +73,7 @@ mod tests {
             version: "1.0.0".to_string(),
             download_count: 100,
             rating_avg: 4.5,
+            favorite_count: 8,
             created_at: Utc::now(),
         };
 
@@ -155,6 +156,7 @@ pub struct SkillListItem {
     pub version: String,
     pub download_count: i32,
     pub rating_avg: f64,
+    pub favorite_count: i32,
     pub created_at: DateTime<Utc>,
 }
 

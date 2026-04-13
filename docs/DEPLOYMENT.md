@@ -173,11 +173,11 @@ docker compose up -d --build
 cd your-project
 skhub config
 # 或
-skhub config repositories http://127.0.0.1:8080
+skhub config set-repo http://127.0.0.1:8080
 ```
 
 简写命令同样可用：
 
 ```bash
-skhub config rep http://127.0.0.1:8080
+
 ```

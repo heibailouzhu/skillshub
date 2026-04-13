@@ -78,10 +78,9 @@ CLI 目录为 `cli/`，命令名为 `skhub`。
 
 ```bash
 cd cli
-npm install
-npm test
-npm run build
-node bin/run.js install --help
+cargo check
+cargo test
+cargo run -- --help
 ```
 
 当前 CLI 主要命令：
@@ -92,8 +91,7 @@ skhub install <slug> --cursor
 skhub install <slug> --claude
 skhub install <slug> --openclaw
 skhub config
-skhub config repositories <url>
-skhub config rep <url>
+skhub config set-repo <url>
 ```
 
 ## 本地联调
@@ -101,7 +99,7 @@ skhub config rep <url>
 如果后端运行在本机 `8080`，可以把 CLI 指向本地 registry：
 
 ```bash
-skhub config repositories http://127.0.0.1:8080
+skhub config set-repo http://127.0.0.1:8080
 ```
 
 建议联调顺序：

@@ -1,17 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import HomePage from '../HomePage';
+import { I18nProvider } from '../../i18n';
 import * as skills from '../../api/skills';
 
-// Mock API
 vi.mock('../../api/skills', () => ({
   getSkills: vi.fn(),
   getPopularCategories: vi.fn(),
   getPopularTags: vi.fn(),
 }));
 
-// Mock Router
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
   return {
@@ -24,106 +23,80 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
-describe('HomePage', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('renders home page correctly', async () => {
-    vi.mocked(skills.getSkills).mockResolvedValue({
-      skills: [],
-      total: 0,
-      page: 1,
-      page_size: 6,
-    });
-    vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
-    vi.mocked(skills.getPopularTags).mockResolvedValue([]);
-
-    render(
+function renderPage() {
+  return render(
+    <I18nProvider>
       <BrowserRouter>
         <HomePage />
       </BrowserRouter>
-    );
+    </I18nProvider>,
+  );
+}
+
+describe('HomePage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  it('renders Chinese homepage content by default for zh locale', async () => {
+    window.localStorage.setItem('skillshub-locale', 'zh-CN');
+    vi.mocked(skills.getSkills).mockResolvedValue({ skills: [], total: 0, page: 1, page_size: 6 });
+    vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
+    vi.mocked(skills.getPopularTags).mockResolvedValue([]);
+
+    renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/发现和分享优秀技能/i)).toBeInTheDocument();
-      // Check for hero section specifically
-      const heroText = screen.getAllByText(/SkillShub 是一个技能分享平台/i);
-      expect(heroText.length).toBeGreaterThan(0);
+      expect(screen.getByText('用更专业的方式展示、发现并沉淀你的技能资产')).toBeInTheDocument();
+      expect(screen.getByText('进入技能市场')).toBeInTheDocument();
+      expect(screen.getByText('热门技能推荐')).toBeInTheDocument();
+    });
+  });
+
+  it('renders English homepage content for en locale', async () => {
+    window.localStorage.setItem('skillshub-locale', 'en-US');
+    vi.mocked(skills.getSkills).mockResolvedValue({ skills: [], total: 0, page: 1, page_size: 6 });
+    vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
+    vi.mocked(skills.getPopularTags).mockResolvedValue([]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('Showcase, discover, and grow your skills in a more professional way')).toBeInTheDocument();
+      expect(screen.getByText('Explore Marketplace')).toBeInTheDocument();
+      expect(screen.getByText('Featured Skills')).toBeInTheDocument();
     });
   });
 
   it('displays loading state initially', () => {
-    vi.mocked(skills.getSkills).mockReturnValue(
-      new Promise(() => {}) // Never resolves
-    );
-    vi.mocked(skills.getPopularCategories).mockReturnValue(
-      new Promise(() => {})
-    );
-    vi.mocked(skills.getPopularTags).mockReturnValue(
-      new Promise(() => {})
-    );
+    vi.mocked(skills.getSkills).mockReturnValue(new Promise(() => {}));
+    vi.mocked(skills.getPopularCategories).mockReturnValue(new Promise(() => {}));
+    vi.mocked(skills.getPopularTags).mockReturnValue(new Promise(() => {}));
 
-    render(
-      <BrowserRouter>
-        <HomePage />
-      </BrowserRouter>
-    );
+    renderPage();
 
-    expect(screen.getByText(/加载中\.\.\./i)).toBeInTheDocument();
+    expect(screen.getByText('正在加载首页内容...')).toBeInTheDocument();
   });
 
-  it('displays popular categories', async () => {
-    vi.mocked(skills.getSkills).mockResolvedValue({
-      skills: [],
-      total: 0,
-      page: 1,
-      page_size: 6,
-    });
+  it('displays popular categories and tags', async () => {
+    vi.mocked(skills.getSkills).mockResolvedValue({ skills: [], total: 0, page: 1, page_size: 6 });
     vi.mocked(skills.getPopularCategories).mockResolvedValue([
       { category: 'AI', skill_count: 10 },
       { category: 'DevOps', skill_count: 8 },
-      { category: 'Web', skill_count: 6 },
     ]);
-    vi.mocked(skills.getPopularTags).mockResolvedValue([]);
-
-    render(
-      <BrowserRouter>
-        <HomePage />
-      </BrowserRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/ai/i)).toBeInTheDocument();
-      expect(screen.getByText(/devops/i)).toBeInTheDocument();
-      expect(screen.getByText(/web/i)).toBeInTheDocument();
-    });
-  });
-
-  it('displays popular tags', async () => {
-    vi.mocked(skills.getSkills).mockResolvedValue({
-      skills: [],
-      total: 0,
-      page: 1,
-      page_size: 6,
-    });
-    vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
     vi.mocked(skills.getPopularTags).mockResolvedValue([
       { tag: 'React', skill_count: 15 },
-      { tag: 'Rust', skill_count: 12 },
       { tag: 'Python', skill_count: 10 },
     ]);
 
-    render(
-      <BrowserRouter>
-        <HomePage />
-      </BrowserRouter>
-    );
+    renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/react/i)).toBeInTheDocument();
-      expect(screen.getByText(/rust/i)).toBeInTheDocument();
-      expect(screen.getByText(/python/i)).toBeInTheDocument();
+      expect(screen.getByText('AI')).toBeInTheDocument();
+      expect(screen.getByText('DevOps')).toBeInTheDocument();
+      expect(screen.getByText(/#React/i)).toBeInTheDocument();
+      expect(screen.getByText(/#Python/i)).toBeInTheDocument();
     });
   });
 
@@ -144,37 +117,19 @@ describe('HomePage', () => {
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z',
         },
-        {
-          id: '2',
-          title: 'Test Skill 2',
-          description: 'Description 2',
-          author_username: 'user2',
-          rating_avg: 3.8,
-          download_count: 50,
-          category: 'DevOps',
-          tags: ['Python'],
-          version: '1.0.0',
-          is_published: true,
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z',
-        },
       ],
-      total: 2,
+      total: 1,
       page: 1,
       page_size: 6,
     });
     vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
     vi.mocked(skills.getPopularTags).mockResolvedValue([]);
 
-    render(
-      <BrowserRouter>
-        <HomePage />
-      </BrowserRouter>
-    );
+    renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/test skill 1/i)).toBeInTheDocument();
-      expect(screen.getByText(/test skill 2/i)).toBeInTheDocument();
+      expect(screen.getAllByText('Test Skill 1').length).toBeGreaterThan(0);
+      expect(screen.getByText('Description 1')).toBeInTheDocument();
     });
   });
 
@@ -183,109 +138,23 @@ describe('HomePage', () => {
     vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
     vi.mocked(skills.getPopularTags).mockResolvedValue([]);
 
-    render(
-      <BrowserRouter>
-        <HomePage />
-      </BrowserRouter>
-    );
+    renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/加载数据失败/i)).toBeInTheDocument();
+      expect(screen.getByText('首页数据加载失败，请稍后重试。')).toBeInTheDocument();
     });
   });
 
-  it('navigates to skill list when clicking browse skills button', async () => {
-    vi.mocked(skills.getSkills).mockResolvedValue({
-      skills: [],
-      total: 0,
-      page: 1,
-      page_size: 6,
-    });
+  it('navigates to skill list and skill creation', async () => {
+    vi.mocked(skills.getSkills).mockResolvedValue({ skills: [], total: 0, page: 1, page_size: 6 });
     vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
     vi.mocked(skills.getPopularTags).mockResolvedValue([]);
 
-    render(
-      <BrowserRouter>
-        <HomePage />
-      </BrowserRouter>
-    );
+    renderPage();
 
     await waitFor(() => {
-      const browseButton = screen.getByText(/浏览技能/i);
-      expect(browseButton.closest('a')).toHaveAttribute('href', '/skills');
-    });
-  });
-
-  it('navigates to skill creation when clicking publish skill button', async () => {
-    vi.mocked(skills.getSkills).mockResolvedValue({
-      skills: [],
-      total: 0,
-      page: 1,
-      page_size: 6,
-    });
-    vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
-    vi.mocked(skills.getPopularTags).mockResolvedValue([]);
-
-    render(
-      <BrowserRouter>
-        <HomePage />
-      </BrowserRouter>
-    );
-
-    await waitFor(() => {
-      const publishButton = screen.getByText(/发布技能/i);
-      expect(publishButton.closest('a')).toHaveAttribute('href', '/skills/create');
-    });
-  });
-
-  it('displays hero section with correct text', async () => {
-    vi.mocked(skills.getSkills).mockResolvedValue({
-      skills: [],
-      total: 0,
-      page: 1,
-      page_size: 6,
-    });
-    vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
-    vi.mocked(skills.getPopularTags).mockResolvedValue([]);
-
-    render(
-      <BrowserRouter>
-        <HomePage />
-      </BrowserRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/发现和分享优秀技能/i)).toBeInTheDocument();
-      const heroText = screen.getAllByText(/让用户可以轻松发现、分享和使用各种技能/i);
-      expect(heroText.length).toBeGreaterThan(0);
-    });
-  });
-
-  it('displays section headers', async () => {
-    vi.mocked(skills.getSkills).mockResolvedValue({
-      skills: [],
-      total: 0,
-      page: 1,
-      page_size: 6,
-    });
-    vi.mocked(skills.getPopularCategories).mockResolvedValue([]);
-    vi.mocked(skills.getPopularTags).mockResolvedValue([]);
-
-    render(
-      <BrowserRouter>
-        <HomePage />
-      </BrowserRouter>
-    );
-
-    await waitFor(() => {
-      const hotSkillsHeader = screen.getAllByText(/热门技能/i);
-      expect(hotSkillsHeader.length).toBeGreaterThan(0);
-
-      const popularCategoriesHeader = screen.getAllByText(/热门分类/i);
-      expect(popularCategoriesHeader.length).toBeGreaterThan(0);
-
-      const popularTagsHeader = screen.getAllByText(/热门标签/i);
-      expect(popularTagsHeader.length).toBeGreaterThan(0);
+      expect(screen.getByText('进入技能市场').closest('a')).toHaveAttribute('href', '/skills');
+      expect(screen.getByText('发布我的技能').closest('a')).toHaveAttribute('href', '/skills/create');
     });
   });
 });

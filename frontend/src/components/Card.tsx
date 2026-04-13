@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 interface CardProps {
   children: React.ReactNode;
@@ -8,54 +8,25 @@ interface CardProps {
 }
 
 export default function Card({ children, className = '', hover = false, onClick }: CardProps) {
-  const baseStyles = 'bg-white rounded-lg shadow-md overflow-hidden';
-  const hoverStyles = hover ? 'hover:shadow-lg transition-shadow duration-200 cursor-pointer' : '';
+  const baseStyles = 'glass-panel rounded-3xl overflow-hidden';
+  const hoverStyles = hover ? 'cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[var(--shadow)]' : '';
 
-  return (
-    <div
-      className={`${baseStyles} ${hoverStyles} ${className}`}
-      onClick={onClick}
-    >
-      {children}
-    </div>
-  );
+  return <div className={`${baseStyles} ${hoverStyles} ${className}`} onClick={onClick}>{children}</div>;
 }
 
-interface CardHeaderProps {
+interface CardSectionProps {
   children: React.ReactNode;
   className?: string;
 }
 
-export function CardHeader({ children, className = '' }: CardHeaderProps) {
-  return (
-    <div className={`px-6 py-4 border-b border-gray-200 ${className}`}>
-      {children}
-    </div>
-  );
+export function CardHeader({ children, className = '' }: CardSectionProps) {
+  return <div className={`border-b border-[var(--line)] px-6 py-5 lg:px-7 lg:py-6 ${className}`}>{children}</div>;
 }
 
-interface CardBodyProps {
-  children: React.ReactNode;
-  className?: string;
+export function CardBody({ children, className = '' }: CardSectionProps) {
+  return <div className={`px-6 py-5 lg:px-7 lg:py-6 ${className}`}>{children}</div>;
 }
 
-export function CardBody({ children, className = '' }: CardBodyProps) {
-  return (
-    <div className={`px-6 py-4 ${className}`}>
-      {children}
-    </div>
-  );
-}
-
-interface CardFooterProps {
-  children: React.ReactNode;
-  className?: string;
-}
-
-export function CardFooter({ children, className = '' }: CardFooterProps) {
-  return (
-    <div className={`px-6 py-4 bg-gray-50 border-t border-gray-200 ${className}`}>
-      {children}
-    </div>
-  );
+export function CardFooter({ children, className = '' }: CardSectionProps) {
+  return <div className={`border-t border-[var(--line)] px-6 py-4 lg:px-7 lg:py-5 ${className}`} style={{ backgroundColor: 'color-mix(in srgb, var(--panel) 86%, white 14%)' }}>{children}</div>;
 }

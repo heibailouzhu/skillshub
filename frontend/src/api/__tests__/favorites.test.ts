@@ -39,22 +39,11 @@ describe('Favorites API', () => {
         favorites: [
           {
             id: '1',
-            user_id: 'user-1',
             skill_id: 'skill-1',
-            skill: {
-              id: 'skill-1',
-              title: 'Test Skill',
-              content: 'Test content',
-              author_id: '123',
-              tags: [],
-              version: '1.0.0',
-              download_count: 0,
-              rating_avg: 0,
-              rating_count: 0,
-              is_published: true,
-              created_at: '2024-01-01T00:00:00Z',
-              updated_at: '2024-01-01T00:00:00Z',
-            },
+            skill_title: 'Test Skill',
+            skill_description: 'Test content',
+            skill_category: 'AI',
+            skill_author_id: '123',
             created_at: '2024-01-01T00:00:00Z',
           },
         ],
@@ -67,7 +56,24 @@ describe('Favorites API', () => {
 
       const result = await favorites.getFavorites();
 
-      expect(result).toEqual(mockData);
+      expect(result).toEqual({
+        ...mockData,
+        favorites: [
+          {
+            ...mockData.favorites[0],
+            user_id: '',
+            skill: {
+              id: 'skill-1',
+              title: 'Test Skill',
+              description: 'Test content',
+              category: 'AI',
+              tags: [],
+              rating_avg: 0,
+              rating_count: 0,
+            },
+          },
+        ],
+      });
     });
 
     it('should throw error on failure', async () => {

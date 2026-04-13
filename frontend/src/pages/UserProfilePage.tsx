@@ -1,43 +1,36 @@
-import { useState, useEffect } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getFavorites } from '../api/favorites';
-import { getRatings } from '../api/ratings';
-import { getCurrentUser } from '../api/auth';
-import { Navbar, Footer, Card, Badge, Button } from '../components';
+import { getRatings, type Rating } from '../api/ratings';
+import { Badge, Button, Card, CardBody, Footer, Navbar } from '../components';
+import { useI18n } from '../i18n';
 import type { Favorite } from '../api/favorites';
-import type { Rating } from '../api/ratings';
-import type { UserPublic } from '../api/auth';
 
 export default function UserProfilePage() {
-  const [user, setUser] = useState<UserPublic | null>(null);
+  const { locale, t } = useI18n();
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [ratings, setRatings] = useState<Rating[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<'favorites' | 'ratings'>('favorites');
+
+  const user = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('user');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('请先登录');
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
       try {
-        const [userRes, favoritesRes, ratingsRes] = await Promise.all([
-          getCurrentUser(),
-          getFavorites({ page: 1, page_size: 50 }),
-          getRatings({ page: 1, page_size: 50 }),
+        const [favoritesRes, ratingsRes] = await Promise.all([
+          getFavorites({ page: 1, page_size: 20 }),
+          getRatings({ page: 1, page_size: 20 }),
         ]);
-
-        setUser(userRes);
         setFavorites(favoritesRes.favorites || []);
         setRatings(ratingsRes.ratings || []);
-      } catch (err: any) {
-        setError('加载用户数据失败');
       } finally {
         setLoading(false);
       }
@@ -46,184 +39,124 @@ export default function UserProfilePage() {
     fetchData();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">加载中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="text-red-600 mb-4">{error || '用户信息加载失败'}</div>
-          <Link to="/login">
-            <Button variant="primary">去登录</Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   const totalFavorites = favorites.length;
   const totalRatings = ratings.length;
-  const avgRating =
-    totalRatings > 0
-      ? ratings.reduce((sum, r) => sum + r.rating, 0) / totalRatings
-      : 0;
+  const avgRating = totalRatings > 0
+    ? ratings.reduce((sum, item) => sum + item.rating, 0) / totalRatings
+    : 0;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col theme-text">
       <Navbar />
-
-      <div className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
-        {/* User Profile Card */}
-        <Card className="mb-6">
-          <div className="flex items-center space-x-6">
-            <div className="w-24 h-24 rounded-full bg-indigo-100 flex items-center justify-center text-4xl">
-              👤
-            </div>
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                {user.username}
-              </h1>
-              <p className="text-gray-600 mb-4">{user.email}</p>
-              {user.bio && (
-                <p className="text-gray-700 bg-gray-100 p-3 rounded-md">
-                  {user.bio}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-indigo-600">
-                {totalFavorites}
+      <main className="container-wide page-shell flex-1">
+        <section className="grid gap-8 xl:grid-cols-[380px_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)]">
+          <Card className="xl:sticky xl:top-28">
+            <CardBody className="space-y-6 p-7 xl:p-8">
+              <div>
+                <div className="text-sm uppercase tracking-[0.24em] theme-text-muted">{t.common.profile}</div>
+                <h1 className="mt-2 text-3xl font-black theme-text">{t.profile.title}</h1>
+                <p className="mt-3 text-sm leading-7 theme-text-soft">{t.profile.subtitle}</p>
               </div>
-              <div className="text-sm text-gray-600">收藏</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-indigo-600">
-                {totalRatings}
-              </div>
-              <div className="text-sm text-gray-600">评分</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-indigo-600">
-                {avgRating.toFixed(1)}
-              </div>
-              <div className="text-sm text-gray-600">平均评分</div>
-            </div>
-          </div>
-        </Card>
 
-        {/* Tabs */}
-        <div className="flex space-x-4 mb-6">
-          <Button
-            variant={activeTab === 'favorites' ? 'primary' : 'secondary'}
-            onClick={() => setActiveTab('favorites')}
-          >
-            我的收藏 ({totalFavorites})
-          </Button>
-          <Button
-            variant={activeTab === 'ratings' ? 'primary' : 'secondary'}
-            onClick={() => setActiveTab('ratings')}
-          >
-            我的评分 ({totalRatings})
-          </Button>
-        </div>
+              <div className="rounded-3xl px-6 py-5" style={{ backgroundColor: 'var(--brand-soft)' }}>
+                <div className="text-xl font-semibold theme-text">{user.username || t.profile.userFallback}</div>
+                <div className="mt-1 text-sm theme-text-soft">{user.email || t.profile.emailUnset}</div>
+                {user.is_admin && <div className="mt-2 text-sm text-[var(--brand)]">{t.navbar.adminAccount}</div>}
+              </div>
 
-        {/* Favorites Tab */}
-        {activeTab === 'favorites' && (
-          <div className="space-y-4">
-            {favorites.length === 0 ? (
-              <Card className="text-center py-12">
-                <p className="text-gray-600 mb-4">还没有收藏任何技能</p>
-                <Link to="/skills">
-                  <Button variant="primary">去浏览技能</Button>
-                </Link>
+              <div className="grid gap-4">
+                <div className="rounded-2xl border border-[var(--line)] p-5 text-center">
+                  <div className="text-3xl font-bold theme-text">{totalFavorites}</div>
+                  <div className="mt-2 text-sm theme-text-soft">{t.favorites.title}</div>
+                </div>
+                <div className="rounded-2xl border border-[var(--line)] p-5 text-center">
+                  <div className="text-3xl font-bold theme-text">{totalRatings}</div>
+                  <div className="mt-2 text-sm theme-text-soft">{t.profile.ratings}</div>
+                </div>
+                <div className="rounded-2xl border border-[var(--line)] p-5 text-center">
+                  <div className="text-3xl font-bold theme-text">{avgRating.toFixed(1)}</div>
+                  <div className="mt-2 text-sm theme-text-soft">{t.profile.avgRating}</div>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+
+          <div className="space-y-6 xl:min-w-0">
+            <div className="flex gap-3">
+              <Button variant={activeTab === 'favorites' ? 'primary' : 'secondary'} onClick={() => setActiveTab('favorites')}>
+                {t.profile.myFavorites} ({totalFavorites})
+              </Button>
+              <Button variant={activeTab === 'ratings' ? 'primary' : 'secondary'} onClick={() => setActiveTab('ratings')}>
+                {t.profile.myRatings} ({totalRatings})
+              </Button>
+            </div>
+
+            {loading ? (
+              <div className="glass-panel rounded-[2rem] p-8 theme-text-soft">{t.profile.loading}</div>
+            ) : activeTab === 'favorites' ? (
+              favorites.length === 0 ? (
+                <Card>
+                  <CardBody className="py-14 text-center">
+                    <p className="theme-text-soft">{t.profile.emptyFavorites}</p>
+                    <div className="mt-5">
+                      <Link to="/skills"><Button>{t.favorites.browse}</Button></Link>
+                    </div>
+                  </CardBody>
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  {favorites.map((fav) => (
+                    <Link key={fav.id} to={`/skills/${fav.skill?.id}`}>
+                      <Card hover>
+                        <CardBody className="flex flex-col gap-4 p-6 lg:flex-row lg:items-start lg:justify-between">
+                          <div>
+                            <h3 className="text-xl font-semibold theme-text">{fav.skill?.title}</h3>
+                            <p className="mt-2 text-sm leading-7 theme-text-soft">{fav.skill?.description || t.market.noDescription}</p>
+                            <div className="mt-3 flex items-center gap-3">
+                              <Badge>{fav.skill?.category || t.market.uncategorized}</Badge>
+                              <span className="text-sm theme-text-muted">
+                                {t.messages.rating} {fav.skill?.rating_avg?.toFixed(1) || '0.0'} ({fav.skill?.rating_count || 0})
+                              </span>
+                            </div>
+                          </div>
+                        </CardBody>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              )
+            ) : ratings.length === 0 ? (
+              <Card>
+                <CardBody className="py-14 text-center">
+                  <p className="theme-text-soft">{t.profile.emptyRatings}</p>
+                  <div className="mt-5">
+                    <Link to="/skills"><Button>{t.favorites.browse}</Button></Link>
+                  </div>
+                </CardBody>
               </Card>
             ) : (
-              favorites.map((fav) => (
-                <Link key={fav.id} to={`/skills/${fav.skill?.id}`}>
-                  <Card hover>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="text-xl font-bold text-gray-900 mb-2">
-                          {fav.skill?.title}
-                        </h3>
-                        <p className="text-gray-600 mb-2">
-                          {fav.skill?.description}
-                        </p>
-                        <div className="flex items-center space-x-2">
-                          <Badge variant="default">
-                            {fav.skill?.category}
-                          </Badge>
-                          <span className="text-sm text-gray-500">
-                            ⭐ {fav.skill?.rating_avg.toFixed(1)} ({fav.skill?.rating_count})
-                          </span>
+              <div className="space-y-4">
+                {ratings.map((rating) => (
+                  <Link key={rating.id} to={`/skills/${rating.skill?.id}`}>
+                    <Card hover>
+                      <CardBody className="flex flex-col gap-4 p-6 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <h3 className="text-xl font-semibold theme-text">{rating.skill?.title}</h3>
+                          <p className="mt-2 text-sm leading-7 theme-text-soft">{rating.skill?.description || t.market.noDescription}</p>
+                          <div className="mt-3 flex items-center gap-3">
+                            <Badge variant="primary">{rating.rating} {t.profile.starsSuffix}</Badge>
+                            <span className="text-sm theme-text-muted">{new Date(rating.created_at).toLocaleDateString(locale)}</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-gray-500">
-                          {new Date(fav.created_at).toLocaleDateString('zh-CN')}
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              ))
+                      </CardBody>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
             )}
           </div>
-        )}
-
-        {/* Ratings Tab */}
-        {activeTab === 'ratings' && (
-          <div className="space-y-4">
-            {ratings.length === 0 ? (
-              <Card className="text-center py-12">
-                <p className="text-gray-600 mb-4">还没有评分任何技能</p>
-                <Link to="/skills">
-                  <Button variant="primary">去浏览技能</Button>
-                </Link>
-              </Card>
-            ) : (
-              ratings.map((rating) => (
-                <Link key={rating.id} to={`/skills/${rating.skill?.id}`}>
-                  <Card hover>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="text-xl font-bold text-gray-900 mb-2">
-                          {rating.skill?.title}
-                        </h3>
-                        <p className="text-gray-600 mb-2">
-                          {rating.skill?.description}
-                        </p>
-                        <div className="flex items-center space-x-2">
-                          <Badge variant="primary">
-                            ⭐ {rating.rating} 星
-                          </Badge>
-                          <span className="text-sm text-gray-500">
-                            {new Date(rating.created_at).toLocaleDateString('zh-CN')}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-
+        </section>
+      </main>
       <Footer />
     </div>
   );

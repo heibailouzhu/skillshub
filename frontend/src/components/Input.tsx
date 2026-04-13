@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -14,34 +14,18 @@ export default function Input({
   id,
   ...props
 }: InputProps) {
-  const inputId = id || label?.toLowerCase().replace(/\s+/g, '-');
+  const inputId = id || props.name || label?.toLowerCase().replace(/\s+/g, '-');
 
   return (
     <div className={fullWidth ? 'w-full' : ''}>
-      {label && (
-        <label
-          htmlFor={inputId}
-          className="block text-sm font-medium text-gray-700 mb-1"
-        >
-          {label}
-        </label>
-      )}
+      {label && <label htmlFor={inputId} className="mb-2 block text-sm font-medium text-[var(--text)]">{label}</label>}
       <input
         id={inputId}
-        className={`
-          block rounded-lg border-gray-300 shadow-sm
-          focus:border-blue-500 focus:ring-blue-500
-          ${error ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : ''}
-          ${fullWidth ? 'w-full' : ''}
-          ${className}
-        `}
+        className={`block rounded-2xl border px-4 py-3.5 text-[var(--text)] shadow-sm placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 ${error ? 'border-rose-400 focus:border-rose-400 focus:ring-rose-400/30' : 'border-[var(--line)] bg-white/50 focus:border-[var(--accent)] focus:ring-[var(--accent)]/25'} ${fullWidth ? 'w-full' : ''} ${className}`}
+        style={{ backgroundColor: 'color-mix(in srgb, var(--panel-strong) 88%, white 12%)' }}
         {...props}
       />
-      {error && (
-        <p className="mt-1 text-sm text-red-600">
-          {error}
-        </p>
-      )}
+      {error && <p className="mt-2 text-sm text-rose-400">{error}</p>}
     </div>
   );
 }

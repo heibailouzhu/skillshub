@@ -1,6 +1,7 @@
 // Request handlers module
 
 pub mod auth;
+pub mod admin;
 pub mod comments;
 pub mod favorites;
 pub mod ratings;

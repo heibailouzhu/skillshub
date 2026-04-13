@@ -1,73 +1,80 @@
-import { useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { createRating, updateRating } from '../api/ratings';
+import { useI18n } from '../i18n';
+import type { Rating } from '../api/ratings';
 
 interface RatingFormProps {
   skillId: string;
-  userRating?: {
-    id: string;
-    rating: number;
-  };
-  onSuccess: () => void;
+  userRating?: Rating;
+  onSuccess?: () => void;
 }
 
-export function RatingForm({ skillId, userRating, onSuccess }: RatingFormProps) {
-  const [rating, setRating] = useState(userRating?.rating || 0);
+export default function RatingForm({ skillId, userRating, onSuccess }: RatingFormProps) {
+  const { locale } = useI18n();
+  const [rating, setRating] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (newRating: number) => {
-    setLoading(true);
-    setError('');
-
-    try {
-      if (userRating) {
-        // 更新评分
-        await updateRating(userRating.id, { rating: newRating });
-      } else {
-        // 创建评分
-        await createRating(skillId, { rating: newRating });
+  const text = locale === 'zh-CN'
+    ? {
+        failed: '评分失败，请稍后重试。',
+        update: '更新评分',
+        create: '为技能评分',
+        hint: '点击星级立即提交评分，系统会自动刷新当前统计。',
+        current: '当前评分：',
+        star: '星',
       }
-      setRating(newRating);
+    : {
+        failed: 'Failed to submit rating. Please try again later.',
+        update: 'Update Rating',
+        create: 'Rate This Skill',
+        hint: 'Click a star to submit immediately. The latest stats refresh automatically.',
+        current: 'Current rating:',
+        star: 'star',
+      };
+
+  useEffect(() => {
+    setRating(userRating?.rating || 0);
+  }, [userRating]);
+
+  const handleRate = async (value: number) => {
+    try {
+      setLoading(true);
       setError('');
-      onSuccess();
+      if (userRating?.id) {
+        await updateRating(userRating.id, { rating: value });
+      } else {
+        await createRating(skillId, { rating: value });
+      }
+      setRating(value);
+      onSuccess?.();
     } catch (err: any) {
-      setError(err.response?.data?.message || '评分失败，请重试');
+      setError(err.response?.data?.message || text.failed);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h3 className="text-lg font-bold text-gray-900 mb-4">
-        {userRating ? '更新评分' : '给技能评分'}
-      </h3>
-      {error && (
-        <div className="mb-4 text-sm text-red-600">{error}</div>
-      )}
-      <div className="flex items-center space-x-2">
+    <div className="rounded-[2rem] border border-white/8 bg-white/5 p-6">
+      <h3 className="text-xl font-semibold text-white">{userRating ? text.update : text.create}</h3>
+      <p className="mt-2 text-sm text-slate-400">{text.hint}</p>
+      {error && <div className="mt-4 text-sm text-rose-300">{error}</div>}
+      <div className="mt-5 flex items-center gap-2">
         {[1, 2, 3, 4, 5].map((star) => (
           <button
             key={star}
             type="button"
+            className={`text-3xl transition ${star <= rating ? 'text-amber-400' : 'text-slate-600 hover:text-amber-300'}`}
+            onClick={() => handleRate(star)}
             disabled={loading}
-            onClick={() => handleSubmit(star)}
-            className={`text-4xl transition-all ${
-              star <= rating
-                ? 'text-yellow-400 cursor-pointer hover:text-yellow-500'
-                : 'text-gray-300 cursor-pointer hover:text-yellow-400'
-            }`}
-            title={`${star} 星`}
+            title={`${star} ${text.star}`}
           >
             ★
           </button>
         ))}
       </div>
-      {rating > 0 && !loading && (
-        <p className="mt-2 text-sm text-gray-600">
-          当前评分: {rating} 星
-        </p>
-      )}
+      {rating > 0 && !loading && <p className="mt-3 text-sm text-slate-400">{text.current} {rating} {text.star}</p>}
     </div>
   );
 }

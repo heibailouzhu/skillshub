@@ -130,14 +130,14 @@ bundle 接口：
 
 ## CLI 架构
 
-CLI 位于 `cli/`，使用 TypeScript + oclif，命令名为 `skhub`。
+CLI 位于 `cli/`，使用 Rust + clap，命令名为 `skhub`。
 
 当前命令：
 
 - `skhub install <slug> --codex|--cursor|--claude|--openclaw`
 - `skhub config`
-- `skhub config repositories <url>`
-- `skhub config rep <url>`
+
+
 
 配置模型：
 

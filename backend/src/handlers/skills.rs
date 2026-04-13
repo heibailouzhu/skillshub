@@ -1,1031 +1,669 @@
-use axum::{
-    extract::{Extension, Path, Query, State},
-    response::Json,
+﻿use axum::{
+    extract::{Extension, Multipart, Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
+    response::{IntoResponse, Json, Response},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::{postgres::PgRow, QueryBuilder, Row};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::middleware::AuthUser;
-use crate::models::skill::Skill;
+use crate::models::skill::{CreateSkillRequest, Skill, SkillListItem, UpdateSkillRequest};
+use crate::models::skill_package::SkillPackage;
 use crate::models::skill_version::SkillVersion;
+use crate::services::skill_package::store_skill_archive;
 use crate::AppState;
 
-/// 技能列表查询参数
 #[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
 pub struct ListSkillsQuery {
-    /// 页码，从 1 开始
-    pub page: Option<u32>,
-    /// 每页数量，最大 100
-    pub page_size: Option<u32>,
-    /// 搜索关键词（全文搜索）
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
     pub search: Option<String>,
-    /// 分类过滤
     pub category: Option<String>,
-    /// 标签过滤（逗号分隔的标签列表）
     pub tags: Option<String>,
-    /// 排序字段（title, category, download_count, rating_avg, created_at, relevance）
     pub sort_by: Option<String>,
-    /// 排序方式（asc, desc）
     pub sort_order: Option<String>,
 }
 
-/// 创建技能请求
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct CreateSkillRequest {
-    /// 技能标题
-    pub title: String,
-    /// 技能描述
-    pub description: Option<String>,
-    /// 技能分类
-    pub category: Option<String>,
-    /// 技能内容
-    pub content: String,
-    /// 技能标签
-    #[allow(dead_code)]
-    pub tags: Option<Vec<String>>,
-}
-
-/// 更新技能请求
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct UpdateSkillRequest {
-    /// 技能标题
-    pub title: Option<String>,
-    /// 技能描述
-    pub description: Option<String>,
-    /// 技能分类
-    pub category: Option<String>,
-    /// 技能内容
-    pub content: Option<String>,
-    /// 技能标签
-    #[allow(dead_code)]
-    pub tags: Option<Vec<String>>,
-}
-
-/// 技能列表响应
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ListSkillsResponse {
-    /// 技能列表
     pub skills: Vec<SkillListItem>,
-    /// 总数
     pub total: i64,
-    /// 当前页
-    pub page: u32,
-    /// 每页数量
-    pub page_size: u32,
+    pub page: i64,
+    pub page_size: i64,
 }
 
-/// 技能列表项
-#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
-pub struct SkillListItem {
-    /// 技能 ID
-    pub id: Uuid,
-    /// 技能 slug
-    pub slug: String,
-    /// 技能标题
-    pub title: String,
-    /// 技能描述
-    pub description: Option<String>,
-    /// 作者 ID
-    pub author_id: Uuid,
-    /// 作者用户名
-    pub author_username: Option<String>,
-    /// 技能分类
-    pub category: Option<String>,
-    /// 当前版本
-    pub version: String,
-    /// 下载次数
-    pub download_count: i32,
-    /// 平均评分
-    pub rating_avg: f64,
-    /// 创建时间
-    pub created_at: String,
-}
-
-/// 技能详情响应
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SkillDetailResponse {
-    /// 技能信息
     pub skill: Skill,
-    /// 版本历史
+    pub favorite_count: i32,
     pub versions: Vec<SkillVersion>,
+    pub package: Option<SkillPackageSummary>,
 }
 
-/// 获取技能列表（公开，无需认证）
-#[utoipa::path(
-    get,
-    path = "/api/skills",
-    params(ListSkillsQuery),
-    responses(
-        (status = 200, description = "成功获取技能列表", body = ListSkillsResponse),
-        (status = 500, description = "服务器错误", body = crate::error::ErrorResponse)
-    ),
-    tag = "技能管理"
-)]
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SkillPackageSummary {
+    pub version: String,
+    pub file_count: i32,
+    pub total_size: i64,
+    pub bundle_hash: String,
+    pub download_url: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PopularCategoryItem {
+    pub name: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PopularTagItem {
+    pub name: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
+pub struct SearchSuggestionsQuery {
+    pub q: String,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SearchSuggestionsResponse {
+    pub suggestions: Vec<String>,
+}
+
+fn parse_user_id(auth_user: &AuthUser) -> AppResult<Uuid> {
+    auth_user
+        .user_id
+        .parse::<Uuid>()
+        .map_err(|_| AppError::internal("Invalid user ID", "INVALID_USER_ID"))
+}
+
+fn slugify(input: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = false;
+
+    for ch in input.chars().flat_map(|c| c.to_lowercase()) {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            prev_dash = false;
+        } else if !prev_dash {
+            slug.push('-');
+            prev_dash = true;
+        }
+    }
+
+    let slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        "skill".to_string()
+    } else {
+        slug
+    }
+}
+
+async fn ensure_unique_slug(state: &AppState, title: &str, exclude_id: Option<Uuid>) -> AppResult<String> {
+    let base = slugify(title);
+    let mut candidate = base.clone();
+    let mut counter = 2;
+
+    loop {
+        let exists = if let Some(id) = exclude_id {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM skills WHERE slug = $1 AND id <> $2)",
+            )
+            .bind(&candidate)
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?
+        } else {
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM skills WHERE slug = $1)")
+                .bind(&candidate)
+                .fetch_one(&state.pool)
+                .await?
+        };
+
+        if !exists {
+            return Ok(candidate);
+        }
+
+        candidate = format!("{}-{}", base, counter);
+        counter += 1;
+    }
+}
+
+#[utoipa::path(get, path = "/api/skills", params(ListSkillsQuery), responses((status = 200, body = ListSkillsResponse)), tag = "skills")]
 pub async fn list_skills(
     State(state): State<AppState>,
     Query(query): Query<ListSkillsQuery>,
 ) -> AppResult<Json<ListSkillsResponse>> {
     let page = query.page.unwrap_or(1).max(1);
-    let page_size = query.page_size.unwrap_or(20).min(100);
+    let page_size = query.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
 
-    // 生成缓存键
-    let cache_key = format!(
-        "skills:list:{}:{}:{}:{}:{}",
-        query.search.as_deref().unwrap_or_default(),
-        query.category.as_deref().unwrap_or_default(),
-        query.tags.as_deref().unwrap_or_default(),
-        query.sort_by.as_deref().unwrap_or_default(),
-        format_args!("{}:{}", page, page_size)
+    let mut base_builder = QueryBuilder::new(
+        "SELECT s.id, s.slug, s.title, s.description, s.author_id, u.username AS author_username, s.category, s.version, s.download_count, s.rating_avg, COALESCE((SELECT COUNT(*)::INT FROM favorites f WHERE f.skill_id = s.id), 0) AS favorite_count, s.created_at FROM skills s LEFT JOIN users u ON s.author_id = u.id WHERE s.is_published = true AND s.is_deleted = false",
     );
-
-    // 尝试从缓存获取
-    if let Ok(Some(cached)) = state
-        .cache_service
-        .get::<ListSkillsResponse>(&cache_key)
-        .await
-    {
-        tracing::debug!("Cache hit for list_skills");
-        return Ok(Json(cached));
-    }
-
-    // 构建基础查询
-    let mut base_query = String::from(
-        "SELECT s.id, s.slug, s.title, s.description, s.author_id, u.username as author_username, \
-         s.category, s.version, s.download_count, s.rating_avg, \
-         to_char(s.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at \
-         FROM skills s \
-         LEFT JOIN users u ON s.author_id = u.id \
-         WHERE s.is_published = true AND s.is_deleted = false",
-    );
-    let mut count_query = String::from(
+    let mut count_builder = QueryBuilder::new(
         "SELECT COUNT(*) FROM skills s WHERE s.is_published = true AND s.is_deleted = false",
     );
-    let mut conditions = Vec::new();
-    let mut query_params: Vec<String> = Vec::new();
 
-    // 全文搜索条件（使用 tsvector）
-    if let Some(search) = &query.search {
-        conditions.push(format!(
-            "s.search_vector @@ plainto_tsquery('english', ${})",
-            query_params.len() + 1
-        ));
-        query_params.push(search.clone());
+    if let Some(search) = query.search.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        let search_like = format!("%{}%", search);
+        base_builder.push(" AND (s.title ILIKE ").push_bind(search_like.clone()).push(" OR COALESCE(s.description, '') ILIKE ").push_bind(search_like.clone()).push(" OR COALESCE(s.content, '') ILIKE ").push_bind(search_like.clone()).push(")");
+        count_builder.push(" AND (s.title ILIKE ").push_bind(search_like.clone()).push(" OR COALESCE(s.description, '') ILIKE ").push_bind(search_like.clone()).push(" OR COALESCE(s.content, '') ILIKE ").push_bind(search_like).push(")");
     }
 
-    // 分类过滤
-    if let Some(category) = &query.category {
-        conditions.push(format!("s.category = ${}", query_params.len() + 1));
-        query_params.push(category.clone());
+    if let Some(category) = query.category.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        base_builder.push(" AND s.category = ").push_bind(category);
+        count_builder.push(" AND s.category = ").push_bind(category);
     }
 
-    // 标签过滤（使用数组包含操作符）
-    if let Some(tags) = &query.tags {
-        let tag_list: Vec<&str> = tags.split(',').collect();
-        for tag in tag_list {
-            let trimmed_tag = tag.trim();
-            if !trimmed_tag.is_empty() {
-                conditions.push(format!("${} = ANY(s.tags)", query_params.len() + 1));
-                query_params.push(trimmed_tag.to_string());
-            }
+    if let Some(tags) = query.tags.as_deref() {
+        for tag in tags.split(',').map(str::trim).filter(|v| !v.is_empty()) {
+            base_builder.push(" AND ").push_bind(tag).push(" = ANY(COALESCE(s.tags, '{}'))");
+            count_builder.push(" AND ").push_bind(tag).push(" = ANY(COALESCE(s.tags, '{}'))");
         }
     }
 
-    // 添加条件到查询
-    if !conditions.is_empty() {
-        let where_clause = conditions.join(" AND ");
-        base_query = format!("{} AND {}", base_query, where_clause);
-        count_query = format!("{} AND {}", count_query, where_clause);
-    }
-
-    // 排序
-    let sort_by = query.sort_by.as_deref().unwrap_or("created_at");
-    let sort_order = query.sort_order.as_deref().unwrap_or("desc");
-
-    // 安全验证排序字段
-    let safe_sort_by = match sort_by {
-        "title" => "s.title",
-        "category" => "s.category",
-        "download_count" => "s.download_count",
-        "rating_avg" => "s.rating_avg",
-        "created_at" => "s.created_at",
-        "relevance" => {
-            if query.search.is_some() {
-                "ts_rank(s.search_vector, plainto_tsquery('english', $1))"
-            } else {
-                "s.created_at"
-            }
-        }
+    let order_column = match query.sort_by.as_deref() {
+        Some("title") => "s.title",
+        Some("category") => "s.category",
+        Some("download_count") => "s.download_count",
+        Some("rating_avg") => "s.rating_avg",
+        Some("favorite_count") => "COALESCE((SELECT COUNT(*)::INT FROM favorites f WHERE f.skill_id = s.id), 0)",
         _ => "s.created_at",
     };
-
-    let safe_sort_order = match sort_order {
-        "asc" | "desc" => sort_order,
-        _ => "desc",
+    let order_direction = match query.sort_order.as_deref() {
+        Some("asc") => "ASC",
+        _ => "DESC",
     };
 
-    // 添加排序和分页
-    base_query = format!(
-        "{} ORDER BY {} {} LIMIT {} OFFSET {}",
-        base_query, safe_sort_by, safe_sort_order, page_size, offset
-    );
+    base_builder
+        .push(" ORDER BY ")
+        .push(order_column)
+        .push(" ")
+        .push(order_direction)
+        .push(", s.id DESC LIMIT ")
+        .push_bind(page_size)
+        .push(" OFFSET ")
+        .push_bind(offset);
 
-    // 查询总数
-    let total_query_result = if query_params.is_empty() {
-        sqlx::query_as::<_, (i64,)>(&count_query)
-            .fetch_one(&state.pool)
-            .await?
-    } else {
-        // 使用参数化查询
-        let mut count_query_builder = sqlx::query_as::<_, (i64,)>(&count_query);
-        for param in &query_params {
-            count_query_builder = count_query_builder.bind(param);
-        }
-        count_query_builder.fetch_one(&state.pool).await?
-    };
+    let skills = base_builder
+        .build_query_as::<SkillListItem>()
+        .fetch_all(&state.pool)
+        .await?;
 
-    let (total,) = total_query_result;
+    let total = count_builder
+        .build_query_scalar::<i64>()
+        .fetch_one(&state.pool)
+        .await?;
 
-    // 查询技能列表
-    let skills = if query_params.is_empty() {
-        sqlx::query_as::<_, SkillListItem>(&base_query)
-            .fetch_all(&state.pool)
-            .await?
-    } else {
-        let mut query_builder = sqlx::query_as::<_, SkillListItem>(&base_query);
-        for param in &query_params {
-            query_builder = query_builder.bind(param);
-        }
-        query_builder.fetch_all(&state.pool).await?
-    };
-
-    tracing::debug!(
-        search = query.search,
-        category = query.category,
-        tags = query.tags,
-        total = total,
-        page = page,
-        "List skills query completed"
-    );
-
-    let response = ListSkillsResponse {
+    Ok(Json(ListSkillsResponse {
         skills,
         total,
         page,
         page_size,
-    };
-
-    // 设置缓存（5分钟）
-    if let Err(e) = state
-        .cache_service
-        .set(
-            &cache_key,
-            &response,
-            Some(std::time::Duration::from_secs(300)),
-        )
-        .await
-    {
-        tracing::warn!("Failed to set cache for list_skills: {}", e);
-    }
-
-    Ok(Json(response))
+    }))
 }
 
-/// 获取单个技能详情（公开，无需认证）
-#[utoipa::path(
-    get,
-    path = "/api/skills/{id}",
-    params(
-        ("id" = Uuid, Path, description = "技能 ID")
-    ),
-    responses(
-        (status = 200, description = "成功获取技能详情", body = SkillDetailResponse),
-        (status = 404, description = "技能不存在", body = crate::error::ErrorResponse),
-        (status = 500, description = "服务器错误", body = crate::error::ErrorResponse)
-    ),
-    tag = "技能管理"
-)]
+#[utoipa::path(get, path = "/api/skills/{id}", responses((status = 200, body = SkillDetailResponse)), tag = "skills")]
 pub async fn get_skill(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<SkillDetailResponse>> {
-    // 查询技能
-    let skill =
-        sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+    let skill = sqlx::query_as::<_, Skill>(
+        "SELECT * FROM skills WHERE id = $1 AND is_published = true AND is_deleted = false",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("Skill not found", "SKILL_NOT_FOUND"))?;
 
-    // 查询技能的所有版本
+    let favorite_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM favorites WHERE skill_id = $1")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await? as i32;
+
     let versions = sqlx::query_as::<_, SkillVersion>(
-        "SELECT * FROM skill_versions WHERE skill_id = $1 ORDER BY version DESC",
+        "SELECT * FROM skill_versions WHERE skill_id = $1 ORDER BY created_at DESC, version DESC",
     )
     .bind(id)
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(SkillDetailResponse { skill, versions }))
+    let package = sqlx::query_as::<_, SkillPackage>(
+        "SELECT * FROM skill_packages WHERE skill_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .map(|pkg| SkillPackageSummary {
+        version: pkg.version,
+        file_count: pkg.file_count,
+        total_size: pkg.total_size,
+        bundle_hash: pkg.bundle_hash,
+        download_url: format!("/api/skills/{}/archive", id),
+    });
+
+    Ok(Json(SkillDetailResponse {
+        skill,
+        favorite_count,
+        versions,
+        package,
+    }))
 }
 
-/// 创建技能（需要认证）
-#[utoipa::path(
-    post,
-    path = "/api/skills",
-    request_body = CreateSkillRequest,
-    responses(
-        (status = 200, description = "成功创建技能", body = Skill),
-        (status = 400, description = "请求参数错误", body = crate::error::ErrorResponse),
-        (status = 401, description = "未认证", body = crate::error::ErrorResponse),
-        (status = 500, description = "服务器错误", body = crate::error::ErrorResponse)
-    ),
-    security(
-        ("bearer_auth" = [])
-    ),
-    tag = "技能管理"
-)]
+#[utoipa::path(get, path = "/api/skills/{id}/archive", responses((status = 200, description = "zip archive")), tag = "skills")]
+pub async fn download_skill_archive(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> AppResult<Response> {
+    let row = sqlx::query(
+        r#"
+        SELECT s.slug, s.version, p.archive_path
+        FROM skills s
+        INNER JOIN skill_packages p ON p.skill_id = s.id
+        WHERE s.id = $1 AND s.is_published = true AND s.is_deleted = false
+        ORDER BY p.created_at DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("Skill package not found", "SKILL_PACKAGE_NOT_FOUND"))?;
+
+    let slug: String = row.get("slug");
+    let version: String = row.get("version");
+    let archive_path: String = row.get("archive_path");
+    let file_name = format!("{}-{}.zip", slug, version);
+
+    let archive_bytes = tokio::fs::read(&archive_path)
+        .await
+        .map_err(|_| AppError::not_found("Archive file not found", "ARCHIVE_NOT_FOUND"))?;
+
+    sqlx::query("UPDATE skills SET download_count = download_count + 1 WHERE id = $1")
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/zip".parse().expect("valid content type"),
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        format!("attachment; filename=\"{}\"", file_name)
+            .parse()
+            .expect("valid content disposition"),
+    );
+
+    Ok((StatusCode::OK, headers, archive_bytes).into_response())
+}
+
+#[utoipa::path(post, path = "/api/skills", request_body = CreateSkillRequest, responses((status = 200, body = Skill)), security(("bearer_auth" = [])), tag = "skills")]
 pub async fn create_skill(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<CreateSkillRequest>,
 ) -> AppResult<Json<Skill>> {
-    // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user
-        .user_id
-        .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+    let user_id = parse_user_id(&auth_user)?;
 
-    // 验证输入
     if req.title.trim().is_empty() {
-        return Err(AppError::Validation(
-            "Skill title cannot be empty".to_string(),
-        ));
+        return Err(AppError::validation("Title cannot be empty", "INVALID_TITLE"));
     }
-
     if req.content.trim().is_empty() {
-        return Err(AppError::Validation(
-            "Skill content cannot be empty".to_string(),
-        ));
+        return Err(AppError::validation("Content cannot be empty", "INVALID_CONTENT"));
     }
 
-    let slug = generate_unique_slug(&state.pool, &req.title).await?;
-    let tags = req.tags.clone().unwrap_or_default();
+    let slug = ensure_unique_slug(&state, &req.title, None).await?;
 
-    // 开始事务
-    let mut tx = state.pool.begin().await?;
-
-    // 插入技能
-    let skill_id = sqlx::query_scalar::<_, Uuid>(
+    let skill = sqlx::query_as::<_, Skill>(
         r#"
-        INSERT INTO skills (slug, title, description, category, content, author_id, tags, version, is_published)
+        INSERT INTO skills (slug, title, description, content, author_id, category, tags, version, is_published)
         VALUES ($1, $2, $3, $4, $5, $6, $7, '1.0.0', true)
-        RETURNING id
+        RETURNING *
         "#,
     )
-    .bind(&slug)
-    .bind(&req.title)
-    .bind(&req.description)
-    .bind(&req.category)
-    .bind(&req.content)
+    .bind(slug)
+    .bind(req.title.trim())
+    .bind(req.description.as_deref())
+    .bind(req.content)
     .bind(user_id)
-    .bind(&tags)
-    .fetch_one(&mut *tx)
+    .bind(req.category.as_deref())
+    .bind(req.tags)
+    .fetch_one(&state.pool)
     .await?;
 
-    // 插入初始版本
     sqlx::query(
-        r#"
-        INSERT INTO skill_versions (skill_id, version, content, changelog)
-        VALUES ($1, '1.0.0', $2, 'Initial version')
-        "#,
+        "INSERT INTO skill_versions (skill_id, version, changelog, content) VALUES ($1, $2, $3, $4)",
     )
-    .bind(skill_id)
-    .bind(&req.content)
-    .execute(&mut *tx)
+    .bind(skill.id)
+    .bind(skill.version.clone())
+    .bind(Some("Initial version".to_string()))
+    .bind(skill.content.clone())
+    .execute(&state.pool)
     .await?;
-
-    // 提交事务
-    tx.commit().await?;
-
-    // 查询创建的技能
-    let skill = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1")
-        .bind(skill_id)
-        .fetch_one(&state.pool)
-        .await?;
-
-    // 使相关缓存失效
-    if let Err(e) = state.cache_service.delete_pattern("skills:list:*").await {
-        tracing::warn!("Failed to delete pattern cache: {}", e);
-    }
-    if let Err(e) = state.cache_service.delete("popular_categories").await {
-        tracing::warn!("Failed to delete popular_categories cache: {}", e);
-    }
-    if let Err(e) = state.cache_service.delete("popular_tags").await {
-        tracing::warn!("Failed to delete popular_tags cache: {}", e);
-    }
-
-    tracing::info!(
-        skill_id = %skill_id,
-        slug = %slug,
-        title = %req.title,
-        author_id = %user_id,
-        "Skill created successfully"
-    );
 
     Ok(Json(skill))
 }
 
-/// 更新技能（需要认证，且必须是作者）
-#[utoipa::path(
-    put,
-    path = "/api/skills/{id}",
-    params(
-        ("id" = Uuid, Path, description = "技能 ID")
-    ),
-    request_body = UpdateSkillRequest,
-    responses(
-        (status = 200, description = "成功更新技能", body = Skill),
-        (status = 400, description = "请求参数错误", body = crate::error::ErrorResponse),
-        (status = 401, description = "未认证", body = crate::error::ErrorResponse),
-        (status = 403, description = "无权限", body = crate::error::ErrorResponse),
-        (status = 404, description = "技能不存在", body = crate::error::ErrorResponse),
-        (status = 500, description = "服务器错误", body = crate::error::ErrorResponse)
-    ),
-    security(
-        ("bearer_auth" = [])
-    ),
-    tag = "技能管理"
-)]
+#[utoipa::path(post, path = "/api/skills/upload", responses((status = 200, body = SkillDetailResponse)), security(("bearer_auth" = [])), tag = "skills")]
+pub async fn create_skill_package(
+    State(state): State<AppState>,
+    Extension(auth_user): Extension<AuthUser>,
+    mut multipart: Multipart,
+) -> AppResult<Json<SkillDetailResponse>> {
+    let user_id = parse_user_id(&auth_user)?;
+
+    let mut title: Option<String> = None;
+    let mut description: Option<String> = None;
+    let mut category: Option<String> = None;
+    let mut tags: Option<Vec<String>> = None;
+    let mut version: Option<String> = None;
+    let mut archive_bytes: Option<Vec<u8>> = None;
+    let mut content_override: Option<String> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::validation(format!("Invalid multipart payload: {e}"), "INVALID_MULTIPART"))?
+    {
+        let Some(name) = field.name().map(str::to_string) else {
+            continue;
+        };
+
+        match name.as_str() {
+            "archive" | "file" => {
+                archive_bytes = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| AppError::validation(format!("Failed to read archive: {e}"), "INVALID_ARCHIVE"))?
+                        .to_vec(),
+                );
+            }
+            "title" => title = Some(field.text().await.unwrap_or_default()),
+            "description" => description = Some(field.text().await.unwrap_or_default()),
+            "category" => category = Some(field.text().await.unwrap_or_default()),
+            "version" => version = Some(field.text().await.unwrap_or_default()),
+            "content" => content_override = Some(field.text().await.unwrap_or_default()),
+            "tags" => {
+                let raw = field.text().await.unwrap_or_default();
+                let parsed = if raw.trim_start().starts_with('[') {
+                    serde_json::from_str::<Vec<String>>(&raw).unwrap_or_default()
+                } else {
+                    raw.split(',')
+                        .map(str::trim)
+                        .filter(|item| !item.is_empty())
+                        .map(ToString::to_string)
+                        .collect()
+                };
+                tags = Some(parsed);
+            }
+            _ => {}
+        }
+    }
+
+    let title = title
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| AppError::validation("Title is required", "INVALID_TITLE"))?;
+    let version = version
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "1.0.0".to_string());
+    let archive_bytes = archive_bytes
+        .ok_or_else(|| AppError::validation("Archive file is required", "ARCHIVE_REQUIRED"))?;
+    let slug = ensure_unique_slug(&state, &title, None).await?;
+
+    let content = content_override.unwrap_or_else(|| format!("# {}\n", title));
+
+    let skill = sqlx::query_as::<_, Skill>(
+        r#"
+        INSERT INTO skills (slug, title, description, content, author_id, category, tags, version, is_published)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+        RETURNING *
+        "#,
+    )
+    .bind(&slug)
+    .bind(&title)
+    .bind(description.as_deref())
+    .bind(&content)
+    .bind(user_id)
+    .bind(category.as_deref())
+    .bind(tags.clone())
+    .bind(&version)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let stored = store_skill_archive(skill.id, &slug, &version, archive_bytes)
+        .await
+        .map_err(|e| AppError::validation(format!("Invalid skill archive: {e}"), "INVALID_SKILL_ARCHIVE"))?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO skill_packages (skill_id, version, archive_path, extracted_path, entry_file, manifest_json, file_count, total_size, bundle_hash)
+        VALUES ($1, $2, $3, $4, 'SKILL.md', $5, $6, $7, $8)
+        "#,
+    )
+    .bind(skill.id)
+    .bind(&version)
+    .bind(&stored.archive_path)
+    .bind(&stored.extracted_path)
+    .bind(&stored.manifest_json)
+    .bind(stored.files.len() as i32)
+    .bind(stored.total_size)
+    .bind(&stored.bundle_hash)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO skill_versions (skill_id, version, changelog, content) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(skill.id)
+    .bind(&version)
+    .bind(Some("Initial package upload".to_string()))
+    .bind(stored.skill_markdown)
+    .execute(&state.pool)
+    .await?;
+
+    let response = SkillDetailResponse {
+        skill: sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1")
+            .bind(skill.id)
+            .fetch_one(&state.pool)
+            .await?,
+        favorite_count: 0,
+        versions: sqlx::query_as::<_, SkillVersion>(
+            "SELECT * FROM skill_versions WHERE skill_id = $1 ORDER BY created_at DESC",
+        )
+        .bind(skill.id)
+        .fetch_all(&state.pool)
+        .await?,
+        package: Some(SkillPackageSummary {
+            version,
+            file_count: stored.files.len() as i32,
+            total_size: stored.total_size,
+            bundle_hash: stored.bundle_hash,
+            download_url: format!("/api/skills/{}/archive", skill.id),
+        }),
+    };
+
+    Ok(Json(response))
+}
+
+#[utoipa::path(put, path = "/api/skills/{id}", request_body = UpdateSkillRequest, responses((status = 200, body = Skill)), security(("bearer_auth" = [])), tag = "skills")]
 pub async fn update_skill(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateSkillRequest>,
 ) -> AppResult<Json<Skill>> {
-    // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user
-        .user_id
-        .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+    let user_id = parse_user_id(&auth_user)?;
 
-    // 检查技能是否存在
-    let existing_skill =
-        sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+    let existing = sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Skill not found", "SKILL_NOT_FOUND"))?;
 
-    // 检查权限
-    if existing_skill.author_id != user_id {
-        return Err(AppError::Forbidden(
-            "You are not authorized to update this skill".to_string(),
-        ));
+    if existing.author_id != user_id {
+        return Err(AppError::forbidden("You are not allowed to update this skill", "FORBIDDEN"));
     }
 
-    // 构建动态更新查询
-    let mut updates = Vec::new();
-    let mut params_count = 1;
+    let original_title = existing.title.clone();
+    let title = req.title.unwrap_or(existing.title);
+    let slug = if title != original_title {
+        ensure_unique_slug(&state, &title, Some(id)).await?
+    } else {
+        existing.slug
+    };
+    let description = req.description.or(existing.description);
+    let content = req.content.unwrap_or(existing.content);
+    let category = req.category.or(existing.category);
+    let tags = req.tags.or(existing.tags);
 
-    if let Some(title) = &req.title {
-        if !title.trim().is_empty() {
-            updates.push(format!("title = ${}", params_count));
-            params_count += 1;
-        }
-    }
-
-    if req.description.is_some() {
-        updates.push(format!("description = ${}", params_count));
-        params_count += 1;
-    }
-
-    if req.category.is_some() {
-        updates.push(format!("category = ${}", params_count));
-        params_count += 1;
-    }
-
-    if let Some(content) = &req.content {
-        if !content.trim().is_empty() {
-            updates.push(format!("content = ${}", params_count));
-            params_count += 1;
-        }
-    }
-
-    // 添加 updated_at
-    updates.push("updated_at = NOW()".to_string());
-
-    if updates.is_empty() {
-        return Err(AppError::Validation("No fields to update".to_string()));
-    }
-
-    let update_query = format!(
-        "UPDATE skills SET {} WHERE id = ${}",
-        updates.join(", "),
-        params_count
-    );
-
-    // 执行更新
-    let mut query = sqlx::query(&update_query);
-
-    if let Some(title) = req.title {
-        if !title.trim().is_empty() {
-            query = query.bind(title);
-        }
-    }
-
-    if let Some(description) = req.description {
-        query = query.bind(description);
-    }
-
-    if let Some(category) = req.category {
-        query = query.bind(category);
-    }
-
-    if let Some(content) = req.content {
-        if !content.trim().is_empty() {
-            query = query.bind(content);
-        }
-    }
-
-    query = query.bind(id);
-
-    query.execute(&state.pool).await?;
-
-    // 查询更新后的技能
-    let skill =
-        sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
-
-    // 使相关缓存失效
-    if let Err(e) = state.cache_service.delete_pattern("skills:list:*").await {
-        tracing::warn!("Failed to delete pattern cache: {}", e);
-    }
-    if let Err(e) = state.cache_service.delete("popular_categories").await {
-        tracing::warn!("Failed to delete popular_categories cache: {}", e);
-    }
-    if let Err(e) = state.cache_service.delete("popular_tags").await {
-        tracing::warn!("Failed to delete popular_tags cache: {}", e);
-    }
-
-    tracing::info!(skill_id = %id, author_id = %user_id, "Skill updated successfully");
+    let skill = sqlx::query_as::<_, Skill>(
+        r#"
+        UPDATE skills
+        SET slug = $2, title = $3, description = $4, content = $5, category = $6, tags = $7, updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(slug)
+    .bind(title)
+    .bind(description)
+    .bind(content)
+    .bind(category)
+    .bind(tags)
+    .fetch_one(&state.pool)
+    .await?;
 
     Ok(Json(skill))
 }
 
-/// 删除技能（需要认证，且必须是作者）
-#[utoipa::path(
-    delete,
-    path = "/api/skills/{id}",
-    params(
-        ("id" = Uuid, Path, description = "技能 ID")
-    ),
-    responses(
-        (status = 200, description = "成功删除技能", body = ()),
-        (status = 401, description = "未认证", body = crate::error::ErrorResponse),
-        (status = 403, description = "无权限", body = crate::error::ErrorResponse),
-        (status = 404, description = "技能不存在", body = crate::error::ErrorResponse),
-        (status = 500, description = "服务器错误", body = crate::error::ErrorResponse)
-    ),
-    security(
-        ("bearer_auth" = [])
-    ),
-    tag = "技能管理"
-)]
+#[utoipa::path(delete, path = "/api/skills/{id}", responses((status = 200)), security(("bearer_auth" = [])), tag = "skills")]
 pub async fn delete_skill(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<()>> {
-    // 从认证中间件获取用户 ID
-    let user_id: Uuid = auth_user
-        .user_id
-        .parse::<Uuid>()
-        .map_err(|_| AppError::Internal("Invalid user ID".to_string()))?;
+    let user_id = parse_user_id(&auth_user)?;
 
-    // 检查技能是否存在
-    let existing_skill =
-        sqlx::query_as::<_, Skill>("SELECT * FROM skills WHERE id = $1 AND is_deleted = false")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Skill not found".to_string()))?;
+    let author_id = sqlx::query_scalar::<_, Uuid>("SELECT author_id FROM skills WHERE id = $1 AND is_deleted = false")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| AppError::not_found("Skill not found", "SKILL_NOT_FOUND"))?;
 
-    // 检查权限
-    if existing_skill.author_id != user_id {
-        return Err(AppError::Forbidden(
-            "You are not authorized to delete this skill".to_string(),
-        ));
+    if author_id != user_id {
+        return Err(AppError::forbidden("You are not allowed to delete this skill", "FORBIDDEN"));
     }
 
-    // 删除技能（软删除）
-    sqlx::query("UPDATE skills SET is_deleted = true WHERE id = $1")
+    sqlx::query("UPDATE skills SET is_deleted = true, is_published = false, updated_at = NOW() WHERE id = $1")
         .bind(id)
         .execute(&state.pool)
         .await?;
 
-    // 使相关缓存失效
-    if let Err(e) = state.cache_service.delete_pattern("skills:list:*").await {
-        tracing::warn!("Failed to delete pattern cache: {}", e);
-    }
-    if let Err(e) = state.cache_service.delete("popular_categories").await {
-        tracing::warn!("Failed to delete popular_categories cache: {}", e);
-    }
-    if let Err(e) = state.cache_service.delete("popular_tags").await {
-        tracing::warn!("Failed to delete popular_tags cache: {}", e);
-    }
-
-    tracing::info!(skill_id = %id, author_id = %user_id, "Skill deleted successfully");
-
     Ok(Json(()))
 }
 
-/// 热门分类响应
-#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
-pub struct PopularCategory {
-    /// 分类名称
-    pub category: String,
-    /// 该分类下的技能数量
-    pub skill_count: i64,
-}
-
-/// 获取热门分类（公开，无需认证）
-#[utoipa::path(
-    get,
-    path = "/api/skills/categories/popular",
-    responses(
-        (status = 200, description = "成功获取热门分类", body = Vec<PopularCategory>),
-        (status = 500, description = "服务器错误", body = crate::error::ErrorResponse)
-    ),
-    tag = "技能管理"
-)]
+#[utoipa::path(get, path = "/api/skills/categories/popular", responses((status = 200, body = Vec<PopularCategoryItem>)), tag = "skills")]
 pub async fn get_popular_categories(
     State(state): State<AppState>,
-) -> AppResult<Json<Vec<PopularCategory>>> {
-    use std::time::Duration;
-
-    let cache_key = "popular_categories";
-
-    // 尝试从缓存获取
-    if let Ok(Some(cached)) = state
-        .cache_service
-        .get::<Vec<PopularCategory>>(cache_key)
-        .await
-    {
-        tracing::debug!("Cache hit for {}", cache_key);
-        return Ok(Json(cached));
-    }
-
-    // 缓存未命中，查询数据库
-    let categories = sqlx::query_as::<_, PopularCategory>(
-        "SELECT category, COUNT(*) as skill_count FROM skills
-         WHERE is_published = true AND is_deleted = false
-         GROUP BY category
-         ORDER BY skill_count DESC
-         LIMIT 20",
+) -> AppResult<Json<Vec<PopularCategoryItem>>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT category AS name, COUNT(*) AS count
+        FROM skills
+        WHERE is_published = true AND is_deleted = false AND category IS NOT NULL AND category <> ''
+        GROUP BY category
+        ORDER BY count DESC, category ASC
+        LIMIT 20
+        "#,
     )
     .fetch_all(&state.pool)
     .await?;
 
-    // 写入缓存（TTL 1 小时）
-    if let Err(e) = state
-        .cache_service
-        .set(cache_key, &categories, Some(Duration::from_secs(3600)))
-        .await
-    {
-        tracing::warn!("Failed to cache {}: {}", cache_key, e);
-    }
+    let result = rows
+        .into_iter()
+        .map(|row| PopularCategoryItem {
+            name: row.get("name"),
+            count: row.get("count"),
+        })
+        .collect();
 
-    Ok(Json(categories))
+    Ok(Json(result))
 }
 
-/// 热门标签响应
-#[derive(Debug, Serialize, Deserialize, FromRow, ToSchema)]
-pub struct PopularTag {
-    /// 标签名称
-    pub tag: String,
-    /// 该标签下的技能数量
-    pub skill_count: i64,
-}
-
-/// 获取热门标签（公开，无需认证）
-#[utoipa::path(
-    get,
-    path = "/api/skills/tags/popular",
-    responses(
-        (status = 200, description = "成功获取热门标签", body = Vec<PopularTag>),
-        (status = 500, description = "服务器错误", body = crate::error::ErrorResponse)
-    ),
-    tag = "技能管理"
-)]
-pub async fn get_popular_tags(State(state): State<AppState>) -> AppResult<Json<Vec<PopularTag>>> {
-    use std::time::Duration;
-
-    let cache_key = "popular_tags";
-
-    // 尝试从缓存获取
-    if let Ok(Some(cached)) = state.cache_service.get::<Vec<PopularTag>>(cache_key).await {
-        tracing::debug!("Cache hit for {}", cache_key);
-        return Ok(Json(cached));
-    }
-
-    // 缓存未命中，查询数据库
-    let tags = sqlx::query_as::<_, PopularTag>(
-        "SELECT unnest(tags) as tag, COUNT(*) as skill_count FROM skills
-         WHERE is_published = true AND is_deleted = false AND array_length(tags, 1) > 0
-         GROUP BY tag
-         ORDER BY skill_count DESC
-         LIMIT 50",
+#[utoipa::path(get, path = "/api/skills/tags/popular", responses((status = 200, body = Vec<PopularTagItem>)), tag = "skills")]
+pub async fn get_popular_tags(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<PopularTagItem>>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT tag AS name, COUNT(*) AS count
+        FROM (
+            SELECT unnest(COALESCE(tags, '{}')) AS tag
+            FROM skills
+            WHERE is_published = true AND is_deleted = false
+        ) t
+        WHERE tag <> ''
+        GROUP BY tag
+        ORDER BY count DESC, tag ASC
+        LIMIT 30
+        "#,
     )
     .fetch_all(&state.pool)
     .await?;
 
-    // 写入缓存（TTL 1 小时）
-    if let Err(e) = state
-        .cache_service
-        .set(cache_key, &tags, Some(Duration::from_secs(3600)))
-        .await
-    {
-        tracing::warn!("Failed to cache {}: {}", cache_key, e);
-    }
+    let result = rows
+        .into_iter()
+        .map(|row| PopularTagItem {
+            name: row.get("name"),
+            count: row.get("count"),
+        })
+        .collect();
 
-    Ok(Json(tags))
+    Ok(Json(result))
 }
 
-/// 搜索建议响应
-#[derive(Debug, Serialize, FromRow, ToSchema)]
-pub struct SearchSuggestion {
-    /// 技能标题
-    pub title: String,
-    /// 技能 ID
-    pub id: Uuid,
-}
-
-/// 搜索建议（公开，无需认证）
-#[utoipa::path(
-    get,
-    path = "/api/skills/search/suggestions",
-    params(
-        ("q" = String, Query, description = "搜索关键词（最少 2 个字符）")
-    ),
-    responses(
-        (status = 200, description = "成功获取搜索建议", body = Vec<SearchSuggestion>),
-        (status = 500, description = "服务器错误", body = crate::error::ErrorResponse)
-    ),
-    tag = "技能管理"
-)]
+#[utoipa::path(get, path = "/api/skills/search/suggestions", params(SearchSuggestionsQuery), responses((status = 200, body = SearchSuggestionsResponse)), tag = "skills")]
 pub async fn search_suggestions(
     State(state): State<AppState>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
-) -> AppResult<Json<Vec<SearchSuggestion>>> {
-    let query = params.get("q").unwrap_or(&String::new()).clone();
-
-    if query.len() < 2 {
-        return Ok(Json(vec![]));
+    Query(query): Query<SearchSuggestionsQuery>,
+) -> AppResult<Json<SearchSuggestionsResponse>> {
+    let keyword = query.q.trim();
+    if keyword.is_empty() {
+        return Ok(Json(SearchSuggestionsResponse {
+            suggestions: Vec::new(),
+        }));
     }
 
-    let suggestions = sqlx::query_as::<_, SearchSuggestion>(
-        "SELECT title, id FROM skills
-         WHERE is_published = true
-         AND is_deleted = false
-         AND (title ILIKE $1 OR description ILIKE $1)
-         LIMIT 10",
+    let limit = query.limit.unwrap_or(8).clamp(1, 20);
+    let pattern = format!("%{}%", keyword);
+
+    let rows: Vec<PgRow> = sqlx::query(
+        r#"
+        SELECT DISTINCT title
+        FROM skills
+        WHERE is_published = true AND is_deleted = false AND title ILIKE $1
+        ORDER BY title ASC
+        LIMIT $2
+        "#,
     )
-    .bind(format!("{}%", query))
+    .bind(pattern)
+    .bind(limit)
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(suggestions))
-}
+    let suggestions = rows.into_iter().map(|row| row.get("title")).collect();
 
-fn slugify(input: &str) -> String {
-    let mut slug = String::new();
-    let mut previous_dash = false;
-
-    for ch in input.trim().chars() {
-        let lower = ch.to_ascii_lowercase();
-        if lower.is_ascii_alphanumeric() {
-            slug.push(lower);
-            previous_dash = false;
-        } else if !previous_dash && !slug.is_empty() {
-            slug.push('-');
-            previous_dash = true;
-        }
-    }
-
-    slug.trim_matches('-').to_string()
-}
-
-async fn generate_unique_slug(pool: &sqlx::PgPool, title: &str) -> AppResult<String> {
-    let base = match slugify(title).as_str() {
-        "" => "skill".to_string(),
-        value => value.to_string(),
-    };
-
-    let mut candidate = base.clone();
-    let mut suffix = 2;
-
-    loop {
-        let exists =
-            sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM skills WHERE slug = $1)")
-                .bind(&candidate)
-                .fetch_one(pool)
-                .await?;
-
-        if !exists {
-            return Ok(candidate);
-        }
-
-        candidate = format!("{}-{}", base, suffix);
-        suffix += 1;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 测试 ListSkillsQuery 反序列化
-    #[test]
-    fn test_list_skills_query_deserialization() {
-        let json = r#"{
-            "page": 1,
-            "page_size": 20,
-            "search": "test",
-            "category": "tutorial",
-            "tags": "AI,Python",
-            "sort_by": "title",
-            "sort_order": "asc"
-        }"#;
-
-        let query: ListSkillsQuery = serde_json::from_str(json).unwrap();
-        assert_eq!(query.page, Some(1));
-        assert_eq!(query.page_size, Some(20));
-        assert_eq!(query.search, Some("test".to_string()));
-        assert_eq!(query.category, Some("tutorial".to_string()));
-        assert_eq!(query.tags, Some("AI,Python".to_string()));
-        assert_eq!(query.sort_by, Some("title".to_string()));
-        assert_eq!(query.sort_order, Some("asc".to_string()));
-    }
-
-    /// 测试 CreateSkillRequest 反序列化
-    #[test]
-    fn test_create_skill_request_deserialization() {
-        let json = r#"{
-            "title": "Test Skill",
-            "description": "A test skill",
-            "category": "AI",
-            "content": "console.log('hello');",
-            "tags": ["JavaScript", "Tutorial"]
-        }"#;
-
-        let req: CreateSkillRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.title, "Test Skill");
-        assert_eq!(req.description, Some("A test skill".to_string()));
-        assert_eq!(req.category, Some("AI".to_string()));
-        assert_eq!(req.content, "console.log('hello');");
-        assert_eq!(
-            req.tags,
-            Some(vec!["JavaScript".to_string(), "Tutorial".to_string()])
-        );
-    }
-
-    /// 测试 UpdateSkillRequest 反序列化（可选字段）
-    #[test]
-    fn test_update_skill_request_partial_deserialization() {
-        let json = r#"{
-            "title": "Updated Title",
-            "content": "new content"
-        }"#;
-
-        let req: UpdateSkillRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.title, Some("Updated Title".to_string()));
-        assert_eq!(req.content, Some("new content".to_string()));
-        assert_eq!(req.description, None);
-        assert_eq!(req.category, None);
-        assert_eq!(req.tags, None);
-    }
-
-    /// 测试 SkillListItem 序列化
-    #[test]
-    fn test_skill_list_item_serialization() {
-        let item = SkillListItem {
-            id: Uuid::new_v4(),
-            slug: "test-skill".to_string(),
-            title: "Test Skill".to_string(),
-            description: Some("Test description".to_string()),
-            author_id: Uuid::new_v4(),
-            author_username: Some("testuser".to_string()),
-            category: Some("AI".to_string()),
-            version: "1.0.0".to_string(),
-            download_count: 100,
-            rating_avg: 4.5,
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-        };
-
-        let json = serde_json::to_string(&item).unwrap();
-        assert!(json.contains("title"));
-        assert!(json.contains("Test Skill"));
-    }
-
-    /// 测试 SearchSuggestion 序列化
-    #[test]
-    fn test_search_suggestion_serialization() {
-        let suggestion = SearchSuggestion {
-            title: "Machine Learning Skill".to_string(),
-            id: Uuid::new_v4(),
-        };
-
-        let json = serde_json::to_string(&suggestion).unwrap();
-        assert!(json.contains("title"));
-        assert!(json.contains("id"));
-    }
-
-    /// 测试 PopularCategory 序列化
-    #[test]
-    fn test_popular_category_serialization() {
-        let category = PopularCategory {
-            category: "AI".to_string(),
-            skill_count: 100,
-        };
-
-        let json = serde_json::to_string(&category).unwrap();
-        assert!(json.contains("category"));
-        assert!(json.contains("skill_count"));
-    }
-
-    /// 测试 PopularTag 序列化
-    #[test]
-    fn test_popular_tag_serialization() {
-        let tag = PopularTag {
-            tag: "Python".to_string(),
-            skill_count: 50,
-        };
-
-        let json = serde_json::to_string(&tag).unwrap();
-        assert!(json.contains("tag"));
-        assert!(json.contains("skill_count"));
-    }
-
-    /// 测试搜索查询长度验证逻辑
-    #[test]
-    fn test_search_query_validation() {
-        // 有效长度
-        assert!("ab".len() >= 2, "Query 'ab' is valid");
-        assert!("test".len() >= 2, "Query 'test' is valid");
-
-        // 无效长度
-        assert!("a".len() < 2, "Query 'a' is too short");
-        assert!("".len() < 2, "Empty query is too short");
-    }
-
-    /// 测试标签解析逻辑
-    #[test]
-    fn test_tags_parsing_logic() {
-        let tags_str = "AI,Python,Rust";
-        let tags: Vec<String> = tags_str.split(',').map(|s| s.to_string()).collect();
-
-        assert_eq!(tags.len(), 3);
-        assert_eq!(tags[0], "AI");
-        assert_eq!(tags[1], "Python");
-        assert_eq!(tags[2], "Rust");
-    }
-
-    /// 测试单标签
-    #[test]
-    fn test_single_tag_parsing() {
-        let tags_str = "AI";
-        let tags: Vec<String> = tags_str.split(',').map(|s| s.to_string()).collect();
-
-        assert_eq!(tags.len(), 1);
-        assert_eq!(tags[0], "AI");
-    }
-
-    /// 测试空标签字符串
-    #[test]
-    fn test_empty_tags_parsing() {
-        let tags_str = "";
-        let tags: Vec<String> = tags_str
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect();
-
-        assert_eq!(tags.len(), 0);
-    }
-
-    #[test]
-    fn test_slugify() {
-        assert_eq!(slugify("Test Skill"), "test-skill");
-        assert_eq!(slugify("  Rust + AI "), "rust-ai");
-    }
-
-    #[test]
-    fn test_slugify_empty_fallback() {
-        assert_eq!(slugify("!!!"), "");
-    }
+    Ok(Json(SearchSuggestionsResponse { suggestions }))
 }

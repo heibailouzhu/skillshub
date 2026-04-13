@@ -4,12 +4,16 @@ use axum::{
     Router,
 };
 
+use crate::handlers::admin::{
+    list_admin_skills, list_admin_users, update_admin_skill_status, update_admin_user_role,
+};
 use crate::handlers::comments::{create_comment, delete_comment, list_comments, update_comment};
 use crate::handlers::favorites::{add_favorite, list_favorites, remove_favorite};
 use crate::handlers::registry::{get_registry_bundle, get_registry_skill};
 use crate::handlers::skills::{
-    create_skill, delete_skill, get_popular_categories, get_popular_tags, get_skill, list_skills,
-    search_suggestions, update_skill,
+    create_skill, create_skill_package, delete_skill, download_skill_archive,
+    get_popular_categories, get_popular_tags, get_skill, list_skills, search_suggestions,
+    update_skill,
 };
 use crate::handlers::versions::{create_version, get_version, rollback_version};
 use crate::handlers::{login, register};
@@ -20,6 +24,18 @@ pub fn auth_routes() -> Router<AppState> {
     Router::new()
         .route("/register", post(register))
         .route("/login", post(login))
+}
+
+pub fn admin_routes(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/skills", get(list_admin_skills))
+        .route("/skills/:id/status", axum::routing::patch(update_admin_skill_status))
+        .route("/users", get(list_admin_users))
+        .route("/users/:id/role", axum::routing::patch(update_admin_user_role))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.auth_service,
+            auth_middleware,
+        ))
 }
 
 /// registry 路由
@@ -37,6 +53,7 @@ pub fn skill_public_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_skills))
         .route("/:id", get(get_skill))
+        .route("/:id/archive", get(download_skill_archive))
         .route("/categories/popular", get(get_popular_categories))
         .route("/tags/popular", get(get_popular_tags))
         .route("/search/suggestions", get(search_suggestions))
@@ -46,6 +63,7 @@ pub fn skill_public_routes() -> Router<AppState> {
 pub fn skill_protected_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/", post(create_skill))
+        .route("/upload", post(create_skill_package))
         .route("/:id", put(update_skill))
         .route("/:id", delete(delete_skill))
         .route_layer(axum::middleware::from_fn_with_state(
@@ -66,18 +84,19 @@ pub fn skill_routes(state: AppState) -> Router<AppState> {
 
 /// 评论路由
 pub fn comment_routes(state: AppState) -> Router<AppState> {
-    Router::new()
-        // 公开路由（获取评论列表）
-        .route("/:skill_id/comments", get(list_comments))
-        // 受保护路由（需要认证）
+    let public_routes = Router::<AppState>::new()
+        .route("/:skill_id/comments", get(list_comments));
+
+    let protected_routes = Router::<AppState>::new()
         .route("/:skill_id/comments", post(create_comment))
         .route("/comments/:comment_id", put(update_comment))
         .route("/comments/:comment_id", delete(delete_comment))
-        // 为受保护路由应用认证中间件
         .route_layer(axum::middleware::from_fn_with_state(
             state.auth_service,
             auth_middleware,
-        ))
+        ));
+
+    public_routes.merge(protected_routes)
 }
 
 /// 收藏路由

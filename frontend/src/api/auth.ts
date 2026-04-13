@@ -19,12 +19,14 @@ export interface AuthResponse {
   user_id: string;
   username: string;
   token: string;
+  is_admin: boolean;
 }
 
 export interface LoginResponse {
   user_id: string;
   username: string;
   token: string;
+  is_admin: boolean;
 }
 
 // Register a new user

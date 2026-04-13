@@ -101,6 +101,7 @@ describe('Skills API', () => {
     it('should return skill data on success', async () => {
       const mockData = {
         id: '1',
+        slug: 'test-skill',
         title: 'Test Skill',
         content: 'Test content',
         author_id: '123',
@@ -113,12 +114,18 @@ describe('Skills API', () => {
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
       };
-      const mockResponse = { data: mockData };
+      const mockResponse = {
+        data: {
+          skill: mockData,
+          versions: [],
+          package: null,
+        },
+      };
       (apiClient.get as any).mockResolvedValue(mockResponse);
 
       const result = await skills.getSkill('1');
 
-      expect(result).toEqual(mockData);
+      expect(result).toEqual({ ...mockData, versions: [], package: null });
     });
 
     it('should throw error on failure', async () => {

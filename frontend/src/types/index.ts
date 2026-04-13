@@ -3,6 +3,7 @@ export interface User {
   id: string;
   username: string;
   email: string;
+  is_admin?: boolean;
   avatar_url?: string;
   bio?: string;
   created_at: string;
@@ -13,6 +14,7 @@ export interface UserPublic {
   id: string;
   username: string;
   email: string;
+  is_admin?: boolean;
   avatar_url?: string;
   bio?: string;
 }
@@ -144,9 +146,12 @@ export interface LoginResponse {
   user_id: string;
   username: string;
   token: string;
+  is_admin: boolean;
 }
 
 export interface RegisterResponse {
   user_id: string;
   token: string;
+  username?: string;
+  is_admin?: boolean;
 }

@@ -1,4 +1,4 @@
-export { default as Button } from './Button';
+﻿export { default as Button } from './Button';
 export { default as Input } from './Input';
 export { default as Card, CardHeader, CardBody, CardFooter } from './Card';
 export { default as Loading } from './Loading';
@@ -7,6 +7,8 @@ export { default as Badge } from './Badge';
 export { Navbar } from './Navbar';
 export { Footer } from './Footer';
 export { default as ProtectedRoute } from './ProtectedRoute';
-export { CommentForm } from './CommentForm';
-export { RatingForm } from './RatingForm';
-export { FavoriteButton } from './FavoriteButton';
+export { default as AdminRoute } from './AdminRoute';
+export { default as CommentForm } from './CommentForm';
+export { default as RatingForm } from './RatingForm';
+export { default as FavoriteButton } from './FavoriteButton';
+export { default as AdminLayout } from './AdminLayout';

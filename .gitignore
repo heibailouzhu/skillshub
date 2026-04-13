@@ -23,9 +23,12 @@ pnpm-debug.log*
 
 # Archive
 .archive/
+backend/storage/
+CON
 
 # IDE
 .vscode/
+.codex/
 .idea/
 *.swp
 *.swo

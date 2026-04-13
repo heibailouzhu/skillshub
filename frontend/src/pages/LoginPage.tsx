@@ -1,24 +1,20 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+﻿import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { login } from '../api/auth';
-import { Navbar, Footer } from '../components';
-import { Input } from '../components';
+import { Footer, Input, Navbar } from '../components';
+import Button from '../components/Button';
+import { useI18n } from '../i18n';
 import type { LoginRequest } from '../api/auth';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState<LoginRequest>({
-    username: '',
-    password: '',
-  });
+  const { t } = useI18n();
+  const [formData, setFormData] = useState<LoginRequest>({ username: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
     setError('');
   };
 
@@ -30,74 +26,47 @@ export default function LoginPage() {
     try {
       const response = await login(formData);
       localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify({
-        id: response.user_id,
-        username: formData.username,
-      }));
+      localStorage.setItem(
+        'user',
+        JSON.stringify({
+          id: response.user_id,
+          username: response.username || formData.username,
+          email: '',
+          is_admin: response.is_admin ?? false,
+        }),
+      );
       navigate('/');
     } catch (err: any) {
-      setError(err.response?.data?.error || '登录失败，请检查用户名和密码');
+      setError(err.response?.data?.error || t.messages.loginFailed);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col theme-text">
       <Navbar />
-
-      <div className="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8">
-          <div>
-            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-              登录
-            </h2>
-            <p className="mt-2 text-center text-sm text-gray-600">
-              或者{' '}
-              <Link
-                to="/register"
-                className="font-medium text-indigo-600 hover:text-indigo-500"
-              >
-                注册新账户
-              </Link>
-            </p>
+      <main className="container-wide flex flex-1 items-center justify-center py-16 lg:py-20">
+        <div className="glass-panel-strong w-full max-w-lg rounded-[2rem] p-8 lg:p-10">
+          <div className="mb-8">
+            <div className="text-sm uppercase tracking-[0.24em] theme-text-muted">{t.auth.welcomeBack}</div>
+            <h1 className="mt-3 text-3xl font-black theme-text">{t.auth.loginTitle}</h1>
+            <p className="mt-3 text-sm leading-6 theme-text-soft">{t.auth.loginHint}</p>
           </div>
-          <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-            {error && (
-              <div className="rounded-md bg-red-50 p-4">
-                <p className="text-sm text-red-800">{error}</p>
-              </div>
-            )}
-            <Input
-              name="username"
-              label="用户名"
-              type="text"
-              required
-              value={formData.username}
-              onChange={handleChange}
-              placeholder="用户名"
-            />
-            <Input
-              name="password"
-              label="密码"
-              type="password"
-              required
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="密码"
-            />
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? '登录中...' : '登录'}
-            </button>
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            {error && <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
+            <Input name="username" label={t.auth.username} type="text" required value={formData.username} onChange={handleChange} placeholder={t.auth.username} fullWidth />
+            <Input name="password" label={t.auth.password} type="password" required value={formData.password} onChange={handleChange} placeholder={t.auth.password} fullWidth />
+            <Button type="submit" loading={loading} fullWidth className="w-full justify-center">{t.common.login}</Button>
           </form>
-        </div>
-      </div>
 
+          <p className="mt-6 text-sm theme-text-soft">
+            {t.auth.noAccountYet}{' '}
+            <Link to="/register" className="text-[var(--brand)] hover:opacity-80">{t.common.register}</Link>
+          </p>
+        </div>
+      </main>
       <Footer />
     </div>
   );
