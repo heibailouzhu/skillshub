@@ -1,6 +1,6 @@
-﻿use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand};
 
-use crate::commands::{config::ConfigCommand, install::InstallCommand, login::LoginCommand, logout::LogoutCommand, package::PackageCommand, publish::PublishCommand, whoami::WhoamiCommand};
+use crate::commands::{config::ConfigCommand, install::InstallCommand, login::LoginCommand, logout::LogoutCommand, package::PackageCommand, publish::PublishCommand, uninstall::UninstallCommand, whoami::WhoamiCommand};
 
 #[derive(Debug, Parser)]
 #[command(name = "skhub", version, about = "SkillShub Rust CLI")]
@@ -18,4 +18,5 @@ pub enum Commands {
     Package(PackageCommand),
     Publish(PublishCommand),
     Install(InstallCommand),
+    Uninstall(UninstallCommand),
 }

@@ -68,7 +68,7 @@ impl InstallCommand {
 
         if matches!(target, crate::install::InstallTarget::Codex | crate::install::InstallTarget::OpenClaw) {
             let archive = client.download_archive(&metadata.skill_id).await?;
-            let archive_path = save_archive(&cwd, &metadata.slug, &bundle.version, &archive, true).await?;
+            let archive_path = save_archive(&metadata.slug, &bundle.version, &archive, true).await?;
             installed_paths.push(archive_path.display().to_string());
         }
 

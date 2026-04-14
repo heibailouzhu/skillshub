@@ -1,4 +1,4 @@
-﻿use anyhow::Result;
+use anyhow::Result;
 
 use skillshub_cli::cli::{Cli, Commands};
 
@@ -13,5 +13,6 @@ async fn main() -> Result<()> {
         Commands::Package(cmd) => cmd.run().await,
         Commands::Publish(cmd) => cmd.run().await,
         Commands::Install(cmd) => cmd.run().await,
+        Commands::Uninstall(cmd) => cmd.run().await,
     }
 }

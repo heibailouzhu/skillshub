@@ -1,8 +1,9 @@
-﻿use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use directories::ProjectDirs;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::fs;
 
 pub const DEFAULT_REPOSITORY: &str = "http://127.0.0.1:3000";
@@ -56,15 +57,20 @@ pub fn global_auth_path() -> Result<PathBuf> {
     Ok(project_dirs()?.config_dir().join("auth.json"))
 }
 
-pub fn project_state_dir(cwd: &std::path::Path) -> PathBuf {
-    cwd.join(".skhub")
+pub fn project_state_dir(cwd: &Path) -> PathBuf {
+    let normalized = cwd.to_string_lossy().replace('\\', "/");
+    let digest = Sha256::digest(normalized.as_bytes());
+    std::env::temp_dir()
+        .join("skillshub")
+        .join("state")
+        .join(format!("{:x}", digest))
 }
 
-pub fn project_state_path(cwd: &std::path::Path) -> PathBuf {
+pub fn project_state_path(cwd: &Path) -> PathBuf {
     project_state_dir(cwd).join("installs.json")
 }
 
-async fn read_json<T: DeserializeOwned>(path: &std::path::Path) -> Result<Option<T>> {
+async fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>> {
     match fs::read_to_string(path).await {
         Ok(raw) => Ok(Some(serde_json::from_str(&raw)?)),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -72,7 +78,7 @@ async fn read_json<T: DeserializeOwned>(path: &std::path::Path) -> Result<Option
     }
 }
 
-async fn write_json<T: Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
+async fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).await?;
     }
@@ -112,11 +118,11 @@ pub async fn clear_auth() -> Result<PathBuf> {
     save_auth(&AuthConfig::default()).await
 }
 
-pub async fn load_install_state(cwd: &std::path::Path) -> Result<InstallState> {
+pub async fn load_install_state(cwd: &Path) -> Result<InstallState> {
     Ok(read_json(&project_state_path(cwd)).await?.unwrap_or_default())
 }
 
-pub async fn save_install_state(cwd: &std::path::Path, state: &InstallState) -> Result<PathBuf> {
+pub async fn save_install_state(cwd: &Path, state: &InstallState) -> Result<PathBuf> {
     let path = project_state_path(cwd);
     write_json(&path, state).await.context("Failed to save install state")?;
     Ok(path)

@@ -1,4 +1,4 @@
-﻿use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 
@@ -41,19 +41,107 @@ fn skill_markdown(files: &[RegistryBundleFile]) -> Result<String> {
         .ok_or_else(|| anyhow!("Bundle is missing SKILL.md"))
 }
 
-pub async fn install_bundle(
-    cwd: &Path,
-    slug: &str,
-    description: Option<&str>,
-    target: InstallTarget,
-    bundle: &RegistryBundle,
-    force: bool,
-) -> Result<Vec<String>> {
-    match target {
-        InstallTarget::Codex => install_directory_bundle(&cwd.join(".agents/skills").join(slug), bundle, force).await,
-        InstallTarget::OpenClaw => install_directory_bundle(&cwd.join("skills").join(slug), bundle, force).await,
-        InstallTarget::Cursor => install_cursor_rule(cwd, slug, description, bundle, force).await,
-        InstallTarget::Claude => install_claude_skill(cwd, slug, description, bundle, force).await,
+fn managed_block(references: &[String]) -> String {
+    let body = references
+        .iter()
+        .map(|reference| format!("@{reference}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if body.is_empty() {
+        "<!-- skillshub:managed:start -->\n<!-- skillshub:managed:end -->".to_string()
+    } else {
+        format!("<!-- skillshub:managed:start -->\n{}\n<!-- skillshub:managed:end -->", body)
+    }
+}
+
+async fn update_managed_references(path: &Path, references: &[String]) -> Result<()> {
+    let managed_start = "<!-- skillshub:managed:start -->";
+    let managed_end = "<!-- skillshub:managed:end -->";
+    let block = managed_block(references);
+    let current = tokio::fs::read_to_string(path).await.unwrap_or_default();
+
+    let next = if let Some(start) = current.find(managed_start) {
+        if let Some(relative_end) = current[start..].find(managed_end) {
+            let end = start + relative_end;
+            let after = end + managed_end.len();
+            format!("{}{}{}", &current[..start], block, &current[after..])
+        } else if current.trim().is_empty() {
+            format!("{block}\n")
+        } else {
+            format!("{}\n\n{}\n", current.trim_end(), block)
+        }
+    } else if current.trim().is_empty() {
+        format!("{block}\n")
+    } else {
+        format!("{}\n\n{}\n", current.trim_end(), block)
+    };
+
+    write_text(path, &next, true).await
+}
+
+async fn clear_managed_reference(path: &Path) -> Result<Option<String>> {
+    let managed_start = "<!-- skillshub:managed:start -->";
+    let managed_end = "<!-- skillshub:managed:end -->";
+    let current = match tokio::fs::read_to_string(path).await {
+        Ok(value) => value,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+
+    let Some(start) = current.find(managed_start) else {
+        return Ok(None);
+    };
+    let Some(relative_end) = current[start..].find(managed_end) else {
+        return Ok(None);
+    };
+    let end = start + relative_end;
+    let after = end + managed_end.len();
+    let mut next = format!("{}{}", &current[..start], &current[after..]);
+    next = next.trim().to_string();
+    if !next.is_empty() {
+        next.push('\n');
+    }
+    write_text(path, &next, true).await?;
+    Ok(Some(path.display().to_string()))
+}
+
+async fn collect_skill_entries(skills_dir: &Path) -> Result<Vec<String>> {
+    let mut entries = Vec::new();
+    let mut dir = match tokio::fs::read_dir(skills_dir).await {
+        Ok(value) => value,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(entries),
+        Err(err) => return Err(err.into()),
+    };
+
+    while let Some(entry) = dir.next_entry().await? {
+        let path = entry.path();
+        if !entry.file_type().await?.is_dir() {
+            continue;
+        }
+        let skill_path = path.join("SKILL.md");
+        if tokio::fs::try_exists(&skill_path).await? {
+            if let Some(name) = path.file_name().and_then(|value| value.to_str()) {
+                entries.push(name.to_string());
+            }
+        }
+    }
+
+    entries.sort();
+    Ok(entries)
+}
+
+async fn remove_path_if_exists(path: &Path) -> Result<Option<String>> {
+    match tokio::fs::metadata(path).await {
+        Ok(metadata) => {
+            if metadata.is_dir() {
+                tokio::fs::remove_dir_all(path).await?;
+            } else {
+                tokio::fs::remove_file(path).await?;
+            }
+            Ok(Some(path.display().to_string()))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err.into()),
     }
 }
 
@@ -66,6 +154,50 @@ async fn install_directory_bundle(destination: &Path, bundle: &RegistryBundle, f
     }
     paths.sort();
     Ok(paths)
+}
+
+async fn install_codex_skill(cwd: &Path, slug: &str, bundle: &RegistryBundle, force: bool) -> Result<Vec<String>> {
+    let skills_dir = cwd.join(".codex/skills");
+    let destination = skills_dir.join(slug);
+    let mut paths = install_directory_bundle(&destination, bundle, force).await?;
+
+    let references = collect_skill_entries(&skills_dir)
+        .await?
+        .into_iter()
+        .map(|entry| format!("./skills/{entry}/SKILL.md"))
+        .collect::<Vec<_>>();
+    let agents_path = cwd.join(".codex/AGENTS.md");
+    update_managed_references(&agents_path, &references).await?;
+    paths.push(agents_path.display().to_string());
+
+    paths.sort();
+    Ok(paths)
+}
+
+async fn uninstall_codex_skill(cwd: &Path, slug: &str) -> Result<Vec<String>> {
+    let mut removed = Vec::new();
+    let skills_dir = cwd.join(".codex/skills");
+    if let Some(path) = remove_path_if_exists(&skills_dir.join(slug)).await? {
+        removed.push(path);
+    }
+
+    let entries = collect_skill_entries(&skills_dir).await?;
+    let agents_path = cwd.join(".codex/AGENTS.md");
+    if entries.is_empty() {
+        if let Some(path) = clear_managed_reference(&agents_path).await? {
+            removed.push(path);
+        }
+    } else {
+        let references = entries
+            .into_iter()
+            .map(|entry| format!("./skills/{entry}/SKILL.md"))
+            .collect::<Vec<_>>();
+        update_managed_references(&agents_path, &references).await?;
+        removed.push(agents_path.display().to_string());
+    }
+
+    removed.sort();
+    Ok(removed)
 }
 
 async fn install_cursor_rule(
@@ -85,69 +217,94 @@ async fn install_cursor_rule(
     Ok(vec![path.display().to_string()])
 }
 
-async fn install_claude_skill(
+async fn uninstall_cursor_rule(cwd: &Path, slug: &str) -> Result<Vec<String>> {
+    let mut removed = Vec::new();
+    if let Some(path) = remove_path_if_exists(&cwd.join(".cursor/rules").join(format!("skhub-{slug}.mdc"))).await? {
+        removed.push(path);
+    }
+    Ok(removed)
+}
+
+async fn install_claude_skill(cwd: &Path, slug: &str, bundle: &RegistryBundle, force: bool) -> Result<Vec<String>> {
+    let skills_dir = cwd.join(".claude/skills");
+    let destination = skills_dir.join(slug);
+    let mut paths = install_directory_bundle(&destination, bundle, force).await?;
+
+    let references = collect_skill_entries(&skills_dir)
+        .await?
+        .into_iter()
+        .map(|entry| format!("./.claude/skills/{entry}/SKILL.md"))
+        .collect::<Vec<_>>();
+    let claude_path = cwd.join("CLAUDE.md");
+    update_managed_references(&claude_path, &references).await?;
+    paths.push(claude_path.display().to_string());
+
+    paths.sort();
+    Ok(paths)
+}
+
+async fn uninstall_claude_skill(cwd: &Path, slug: &str) -> Result<Vec<String>> {
+    let mut removed = Vec::new();
+    let skills_dir = cwd.join(".claude/skills");
+    if let Some(path) = remove_path_if_exists(&skills_dir.join(slug)).await? {
+        removed.push(path);
+    }
+
+    let entries = collect_skill_entries(&skills_dir).await?;
+    let claude_path = cwd.join("CLAUDE.md");
+    if entries.is_empty() {
+        if let Some(path) = clear_managed_reference(&claude_path).await? {
+            removed.push(path);
+        }
+    } else {
+        let references = entries
+            .into_iter()
+            .map(|entry| format!("./.claude/skills/{entry}/SKILL.md"))
+            .collect::<Vec<_>>();
+        update_managed_references(&claude_path, &references).await?;
+        removed.push(claude_path.display().to_string());
+    }
+
+    removed.sort();
+    Ok(removed)
+}
+
+pub async fn install_bundle(
     cwd: &Path,
     slug: &str,
     description: Option<&str>,
+    target: InstallTarget,
     bundle: &RegistryBundle,
     force: bool,
 ) -> Result<Vec<String>> {
-    let skill_path = cwd.join(".skhub/claude/skills").join(format!("{slug}.md"));
-    let index_path = cwd.join(".skhub/claude/index.md");
-    let claude_path = cwd.join("CLAUDE.md");
-    let managed_start = "<!-- skhub:managed:start -->";
-    let managed_end = "<!-- skhub:managed:end -->";
-
-    let skill_content = format!(
-        "# {slug}\n\n{}\n\n{}\n",
-        description.unwrap_or("Installed from SkillShub."),
-        skill_markdown(&bundle.files)?
-    );
-    write_text(&skill_path, &skill_content, force).await?;
-
-    let skills_dir = cwd.join(".skhub/claude/skills");
-    tokio::fs::create_dir_all(&skills_dir).await?;
-    let mut entries = tokio::fs::read_dir(&skills_dir).await?;
-    let mut names = Vec::new();
-    while let Some(entry) = entries.next_entry().await? {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.ends_with(".md") {
-            names.push(name);
-        }
+    match target {
+        InstallTarget::Codex => install_codex_skill(cwd, slug, bundle, force).await,
+        InstallTarget::OpenClaw => install_directory_bundle(&cwd.join("skills").join(slug), bundle, force).await,
+        InstallTarget::Cursor => install_cursor_rule(cwd, slug, description, bundle, force).await,
+        InstallTarget::Claude => install_claude_skill(cwd, slug, bundle, force).await,
     }
-    names.sort();
-    let mut index = String::from("# SkillShub Claude Skills\n\n");
-    for name in names {
-        index.push_str(&format!("@./skills/{name}\n"));
-    }
-    index.push('\n');
-    write_text(&index_path, &index, true).await?;
-
-    let managed_block = format!("{managed_start}\n@./.skhub/claude/index.md\n{managed_end}");
-    let current = tokio::fs::read_to_string(&claude_path).await.unwrap_or_default();
-    let next = if let Some(start) = current.find(managed_start) {
-        if let Some(end) = current.find(managed_end) {
-            let after = end + managed_end.len();
-            format!("{}{}{}", &current[..start], managed_block, &current[after..])
-        } else {
-            format!("{}\n\n{}\n", current.trim_end(), managed_block)
-        }
-    } else if current.trim().is_empty() {
-        format!("{managed_block}\n")
-    } else {
-        format!("{}\n\n{}\n", current.trim_end(), managed_block)
-    };
-    write_text(&claude_path, &next, true).await?;
-
-    Ok(vec![
-        skill_path.display().to_string(),
-        index_path.display().to_string(),
-        claude_path.display().to_string(),
-    ])
 }
 
-pub async fn save_archive(cwd: &Path, slug: &str, version: &str, bytes: &[u8], force: bool) -> Result<PathBuf> {
-    let path = cwd.join(".skhub/downloads").join(format!("{slug}-{version}.zip"));
+pub async fn uninstall_target(cwd: &Path, slug: &str, target: InstallTarget) -> Result<Vec<String>> {
+    match target {
+        InstallTarget::Codex => uninstall_codex_skill(cwd, slug).await,
+        InstallTarget::OpenClaw => {
+            let mut removed = Vec::new();
+            if let Some(path) = remove_path_if_exists(&cwd.join("skills").join(slug)).await? {
+                removed.push(path);
+            }
+            Ok(removed)
+        }
+        InstallTarget::Cursor => uninstall_cursor_rule(cwd, slug).await,
+        InstallTarget::Claude => uninstall_claude_skill(cwd, slug).await,
+    }
+}
+
+pub async fn save_archive(slug: &str, version: &str, bytes: &[u8], force: bool) -> Result<PathBuf> {
+    let path = std::env::temp_dir()
+        .join("skillshub")
+        .join("downloads")
+        .join(format!("{slug}-{version}.zip"));
     write_binary(&path, bytes, force).await?;
     Ok(path)
 }

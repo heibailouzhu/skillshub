@@ -61,6 +61,12 @@ export default function LoginPage() {
             <Button type="submit" loading={loading} fullWidth className="w-full justify-center">{t.common.login}</Button>
           </form>
 
+          <div className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-4 py-4 text-sm leading-6 theme-text-soft">
+            <div className="font-medium theme-text">CLI</div>
+            <div className="mt-2 font-mono text-xs theme-text-muted">skhub config set-repo &lt;url&gt;</div>
+            <div className="mt-1 font-mono text-xs theme-text-muted">skhub install &lt;slug&gt; --codex</div>
+          </div>
+
           <p className="mt-6 text-sm theme-text-soft">
             {t.auth.noAccountYet}{' '}
             <Link to="/register" className="text-[var(--brand)] hover:opacity-80">{t.common.register}</Link>

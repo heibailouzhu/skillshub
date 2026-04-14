@@ -1,5 +1,6 @@
-﻿pub mod config;
+pub mod config;
 pub mod install;
+pub mod uninstall;
 pub mod login;
 pub mod logout;
 pub mod package;
